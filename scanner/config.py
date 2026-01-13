@@ -16,6 +16,11 @@ class MexcConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     base_url: str = Field(default="https://api.mexc.com")
+    timeout_s: float = Field(default=10)
+    max_retries: int = Field(default=5)
+    backoff_base_s: float = Field(default=0.5)
+    backoff_max_s: float = Field(default=8)
+    max_rps: float = Field(default=2.0)
 
 
 class RuntimeConfig(BaseModel):
