@@ -70,6 +70,27 @@ class SamplingConfig(BaseModel):
     raw: RawSamplingConfig = Field(default_factory=RawSamplingConfig)
 
 
+class FeesConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    taker_bps: float = Field(default=4.0)
+    maker_bps: float = Field(default=2.0)
+
+
+class SpreadThresholdsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    median_max_bps: float = Field(default=25.0)
+    p90_max_bps: float = Field(default=60.0)
+
+
+class ThresholdsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spread: SpreadThresholdsConfig = Field(default_factory=SpreadThresholdsConfig)
+    uptime_min: float = Field(default=0.9)
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -78,6 +99,8 @@ class AppConfig(BaseModel):
     obs: ObsConfig = Field(default_factory=ObsConfig)
     universe: UniverseConfig = Field(default_factory=UniverseConfig)
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
+    thresholds: ThresholdsConfig = Field(default_factory=ThresholdsConfig)
+    fees: FeesConfig = Field(default_factory=FeesConfig)
 
 
 @dataclass(frozen=True)
