@@ -116,6 +116,13 @@ class ThresholdsConfig(BaseModel):
     uptime_min: float = Field(default=0.9)
 
 
+class ReportConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    top_n: int = Field(default=20)
+    include_raw_in_bundle: bool = Field(default=False)
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -127,6 +134,7 @@ class AppConfig(BaseModel):
     thresholds: ThresholdsConfig = Field(default_factory=ThresholdsConfig)
     fees: FeesConfig = Field(default_factory=FeesConfig)
     depth: DepthConfig = Field(default_factory=DepthConfig)
+    report: ReportConfig = Field(default_factory=ReportConfig)
 
 
 @dataclass(frozen=True)
