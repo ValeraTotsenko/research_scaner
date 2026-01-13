@@ -36,12 +36,23 @@ class ObsConfig(BaseModel):
     log_jsonl: bool = Field(default=True)
 
 
+class UniverseConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    quote_asset: str = Field(default="USDT")
+    min_quote_volume_24h: float = Field(default=100_000)
+    min_trades_24h: int = Field(default=200)
+    blacklist_regex: list[str] = Field(default_factory=list)
+    whitelist: list[str] = Field(default_factory=list)
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mexc: MexcConfig = Field(default_factory=MexcConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     obs: ObsConfig = Field(default_factory=ObsConfig)
+    universe: UniverseConfig = Field(default_factory=UniverseConfig)
 
 
 @dataclass(frozen=True)
