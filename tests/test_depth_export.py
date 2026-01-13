@@ -1,0 +1,63 @@
+from pathlib import Path
+
+from scanner.analytics.scoring import ScoreResult
+from scanner.analytics.spread_stats import SpreadStats
+from scanner.io.depth_export import export_depth_metrics, export_summary_enriched
+from scanner.models.depth import DepthSymbolMetrics
+
+
+def _spread_stats(symbol: str) -> SpreadStats:
+    return SpreadStats(
+        symbol=symbol,
+        sample_count=5,
+        valid_samples=5,
+        invalid_quotes=0,
+        spread_median_bps=10.0,
+        spread_p10_bps=5.0,
+        spread_p25_bps=7.0,
+        spread_p90_bps=15.0,
+        uptime=1.0,
+        insufficient_samples=False,
+        quote_volume_24h=100000.0,
+        trades_24h=1000,
+    )
+
+
+def _score(symbol: str) -> ScoreResult:
+    return ScoreResult(
+        symbol=symbol,
+        spread_stats=_spread_stats(symbol),
+        net_edge_bps=5.0,
+        pass_spread=True,
+        score=90.0,
+        fail_reasons=(),
+    )
+
+
+def test_export_depth_outputs(tmp_path: Path) -> None:
+    results = [
+        DepthSymbolMetrics(
+            symbol="BTCUSDT",
+            sample_count=2,
+            valid_samples=2,
+            empty_book_count=0,
+            invalid_book_count=0,
+            symbol_unavailable_count=0,
+            best_bid_notional_median=100.0,
+            best_ask_notional_median=110.0,
+            topn_bid_notional_median=150.0,
+            topn_ask_notional_median=160.0,
+            band_bid_notional_median={5: 200.0},
+            unwind_slippage_p90_bps=25.0,
+            uptime=1.0,
+            pass_depth=True,
+            fail_reasons=(),
+        )
+    ]
+
+    csv_path = export_depth_metrics(tmp_path, results, band_bps=[5])
+    assert csv_path.exists()
+
+    summary_path = export_summary_enriched(tmp_path, [_score("BTCUSDT")], results, band_bps=[5])
+    content = summary_path.read_text(encoding="utf-8")
+    assert "pass_total" in content

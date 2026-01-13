@@ -56,6 +56,14 @@ class SpreadSamplingConfig(BaseModel):
     per_symbol_limit: int = Field(default=50)
 
 
+class DepthSamplingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    duration_s: int = Field(default=1200)
+    interval_s: float = Field(default=30)
+    limit: int = Field(default=100)
+
+
 class RawSamplingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -67,6 +75,7 @@ class SamplingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     spread: SpreadSamplingConfig = Field(default_factory=SpreadSamplingConfig)
+    depth: DepthSamplingConfig = Field(default_factory=DepthSamplingConfig)
     raw: RawSamplingConfig = Field(default_factory=RawSamplingConfig)
 
 
@@ -84,10 +93,26 @@ class SpreadThresholdsConfig(BaseModel):
     p90_max_bps: float = Field(default=60.0)
 
 
+class DepthThresholdsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    best_level_min_notional: float = Field(default=100.0)
+    unwind_slippage_max_bps: float = Field(default=50.0)
+
+
+class DepthConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    top_n_levels: int = Field(default=10)
+    band_bps: list[int] = Field(default_factory=lambda: [5, 10, 20])
+    stress_notional_usdt: float = Field(default=100.0)
+
+
 class ThresholdsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     spread: SpreadThresholdsConfig = Field(default_factory=SpreadThresholdsConfig)
+    depth: DepthThresholdsConfig = Field(default_factory=DepthThresholdsConfig)
     uptime_min: float = Field(default=0.9)
 
 
@@ -101,6 +126,7 @@ class AppConfig(BaseModel):
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
     thresholds: ThresholdsConfig = Field(default_factory=ThresholdsConfig)
     fees: FeesConfig = Field(default_factory=FeesConfig)
+    depth: DepthConfig = Field(default_factory=DepthConfig)
 
 
 @dataclass(frozen=True)
