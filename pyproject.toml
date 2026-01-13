@@ -3,7 +3,7 @@ name = "research_scaner"
 version = "0.1.0"
 description = "Bootstrap CLI for research scanner"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10.12"
 dependencies = [
   "pydantic>=2.6",
   "PyYAML>=6.0",
