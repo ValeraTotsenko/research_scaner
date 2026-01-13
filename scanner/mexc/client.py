@@ -78,6 +78,12 @@ class MexcClient:
             raise FatalHttpError("bookTicker response must be a list of objects", payload=payload)
         return payload
 
+    def get_book_ticker_symbol(self, symbol: str) -> dict:
+        payload = self._request("GET", "/api/v3/ticker/bookTicker", params={"symbol": symbol})
+        if not isinstance(payload, dict):
+            raise FatalHttpError("bookTicker symbol response must be a dict", payload=payload)
+        return payload
+
     def get_depth(self, symbol: str, limit: int) -> dict:
         payload = self._request("GET", "/api/v3/depth", params={"symbol": symbol, "limit": limit})
         if not isinstance(payload, dict):

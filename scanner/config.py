@@ -46,6 +46,30 @@ class UniverseConfig(BaseModel):
     whitelist: list[str] = Field(default_factory=list)
 
 
+class SpreadSamplingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    duration_s: int = Field(default=1800)
+    interval_s: float = Field(default=5)
+    min_uptime: float = Field(default=0.9)
+    allow_per_symbol: bool = Field(default=False)
+    per_symbol_limit: int = Field(default=50)
+
+
+class RawSamplingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(default=True)
+    gzip: bool = Field(default=True)
+
+
+class SamplingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spread: SpreadSamplingConfig = Field(default_factory=SpreadSamplingConfig)
+    raw: RawSamplingConfig = Field(default_factory=RawSamplingConfig)
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -53,6 +77,7 @@ class AppConfig(BaseModel):
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     obs: ObsConfig = Field(default_factory=ObsConfig)
     universe: UniverseConfig = Field(default_factory=UniverseConfig)
+    sampling: SamplingConfig = Field(default_factory=SamplingConfig)
 
 
 @dataclass(frozen=True)
