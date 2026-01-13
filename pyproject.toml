@@ -1,0 +1,20 @@
+[project]
+name = "research_scaner"
+version = "0.1.0"
+description = "Bootstrap CLI for research scanner"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.6",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+
+testpaths = ["tests"]
