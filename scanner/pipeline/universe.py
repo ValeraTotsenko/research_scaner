@@ -145,6 +145,17 @@ def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
         kept.append(symbol)
 
     if not kept:
+        stats = UniverseStats(total=len(candidates), kept=0, rejected=len(rejects))
+        log_event(
+            logger,
+            logging.ERROR,
+            "universe_empty",
+            "Universe filtered to 0 symbols",
+            total=stats.total,
+            kept=stats.kept,
+            rejected=stats.rejected,
+            top_reject_reasons=_top_rejects(rejects),
+        )
         raise UniverseBuildError("Universe filtered to 0 symbols; relax thresholds")
 
     stats = UniverseStats(total=len(candidates), kept=len(kept), rejected=len(rejects))
