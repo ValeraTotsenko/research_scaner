@@ -44,7 +44,13 @@ class MexcClient:
         self._logger = logger or logging.getLogger(__name__)
         self._run_id = run_id or "n/a"
         self._metrics = MexcMetrics()
-        self._client = httpx.Client(base_url=config.base_url, timeout=config.timeout_s, transport=transport)
+        timeout = httpx.Timeout(
+            connect=config.timeout_s,
+            read=config.timeout_s,
+            write=config.timeout_s,
+            pool=config.timeout_s,
+        )
+        self._client = httpx.Client(base_url=config.base_url, timeout=timeout, transport=transport)
         self._rate_limiter = rate_limiter or TokenBucket(rate_per_sec=config.max_rps)
 
     @property
