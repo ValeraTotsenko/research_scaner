@@ -419,7 +419,7 @@ def _write_shortlist(path: Path, rows: list[SummaryEnrichedRow]) -> None:
                     "symbol": row.symbol,
                     "score": f"{row.score:.6f}",
                     "pass_spread": row.pass_spread,
-                    "pass_depth": \"\" if row.pass_depth is None else row.pass_depth,
+                    "pass_depth": "" if row.pass_depth is None else row.pass_depth,
                     "pass_total": row.pass_total,
                 }
             )
