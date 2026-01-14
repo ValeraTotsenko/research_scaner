@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -88,11 +89,18 @@ def write_run_meta(
     spec_version: str,
     error: str | None = None,
 ) -> None:
+    config_payload = config or {}
+    config_hash = None
+    if config is not None:
+        normalized = json.dumps(config_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        config_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
     payload: dict[str, Any] = {
         "run_id": run_id,
         "started_at": started_at,
         "git_commit": git_commit,
-        "config": config or {},
+        "config": config_payload,
+        "config_hash": config_hash,
         "status": status,
         "scanner_version": scanner_version,
         "spec_version": spec_version,
