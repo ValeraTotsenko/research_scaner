@@ -17,7 +17,7 @@ pipeline:
   total_timeout_s: 0
   stage_timeouts_s:
     universe: 300
-    spread: 2400
+    spread: 300
     score: 300
     depth: 3600
     report: 300
