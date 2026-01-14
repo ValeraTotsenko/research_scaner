@@ -7,7 +7,7 @@ mexc:
   max_rps: 1.2
 
 runtime:
-  run_name: "smoke"
+  run_name: "smoke_raw"
   timezone: "UTC"
 
 obs:
@@ -27,7 +27,7 @@ sampling:
   spread:
     duration_s: 120
     interval_s: 2
-    min_uptime: 0.60
+    min_uptime: 0.6
     allow_per_symbol: false
     per_symbol_limit: 50
   depth:
@@ -35,7 +35,7 @@ sampling:
     interval_s: 30
     limit: 50
   raw:
-    enabled: false
+    enabled: true
     gzip: true
 
 thresholds:
@@ -45,7 +45,7 @@ thresholds:
   depth:
     best_level_min_notional: 5.0
     unwind_slippage_max_bps: 400.0
-  uptime_min: 0.60
+  uptime_min: 0.6
 
 fees:
   taker_bps: 4.0
@@ -65,13 +65,13 @@ pipeline:
   fail_fast: true
   continue_on_error: false
   artifact_validation: "lenient"
-  total_timeout_s: 0
 
+  total_timeout_s: 0
   stage_timeouts_s:
     universe: 120
-    spread: 300
+    spread: 240
     score: 120
-    depth: 600
+    depth: 360
     report: 120
 
   timeout_behavior: "fail"
