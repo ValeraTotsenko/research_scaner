@@ -31,3 +31,5 @@ class DepthCheckResult:
     depth_requests_total: int
     depth_fail_total: int
     depth_symbols_pass_total: int
+    timed_out: bool
+    elapsed_s: float

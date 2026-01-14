@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 
 class ConfigError(Exception):
@@ -133,6 +133,20 @@ class PipelineConfig(BaseModel):
     fail_fast: bool = Field(default=True)
     continue_on_error: bool = Field(default=False)
     artifact_validation: str = Field(default="strict")
+    total_timeout_s: int = Field(default=0, ge=0)
+    stage_timeouts_s: dict[str, int] = Field(default_factory=dict)
+    timeout_behavior: Literal["fail", "partial_success"] = Field(default="fail")
+
+    @field_validator("stage_timeouts_s")
+    @classmethod
+    def _validate_stage_timeouts(cls, value: dict[str, int]) -> dict[str, int]:
+        allowed = {"universe", "spread", "score", "depth", "report"}
+        for key, timeout_s in value.items():
+            if key not in allowed:
+                raise ValueError(f"Invalid stage timeout key: {key}")
+            if timeout_s < 0:
+                raise ValueError("stage_timeouts_s values must be >= 0")
+        return value
 
 
 class AppConfig(BaseModel):
@@ -148,6 +162,25 @@ class AppConfig(BaseModel):
     depth: DepthConfig = Field(default_factory=DepthConfig)
     report: ReportConfig = Field(default_factory=ReportConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+
+    @model_validator(mode="after")
+    def _apply_pipeline_timeout_defaults(self) -> "AppConfig":
+        defaults = _default_stage_timeouts(self.sampling)
+        stage_timeouts = dict(self.pipeline.stage_timeouts_s)
+        for stage, timeout_s in defaults.items():
+            stage_timeouts.setdefault(stage, timeout_s)
+        self.pipeline.stage_timeouts_s = stage_timeouts
+        return self
+
+
+def _default_stage_timeouts(sampling: SamplingConfig) -> dict[str, int]:
+    return {
+        "universe": 300,
+        "spread": sampling.spread.duration_s * 2 + 60,
+        "score": 300,
+        "depth": sampling.depth.duration_s * 2 + 60,
+        "report": 300,
+    }
 
 
 @dataclass(frozen=True)

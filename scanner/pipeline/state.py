@@ -27,7 +27,7 @@ class StageState:
     inputs: list[str]
     outputs: list[str]
     metrics: dict[str, Any]
-    error: dict[str, str] | None
+    error: dict[str, Any] | None
 
 
 @dataclass
@@ -67,7 +67,7 @@ class PipelineState:
         started_at: str | None = None,
         finished_at: str | None = None,
         metrics: dict[str, Any] | None = None,
-        error: dict[str, str] | None = None,
+        error: dict[str, Any] | None = None,
     ) -> None:
         stage = self.get_stage(name)
         if status is not None:

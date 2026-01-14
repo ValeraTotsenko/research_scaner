@@ -59,6 +59,8 @@ def run_depth_check(
     candidates: Sequence[object],
     cfg: AppConfig,
     out_dir: Path,
+    *,
+    deadline_ts: float | None = None,
 ) -> DepthCheckResult:
     logger = logging.getLogger(__name__)
     depth_sampling = cfg.sampling.depth
@@ -86,11 +88,39 @@ def run_depth_check(
     depth_fail_total = 0
 
     start = time.monotonic()
+    timed_out = False
+    timeout_s = max(0.0, deadline_ts - start) if deadline_ts is not None else None
     backoff_s = 0.5
 
     for tick_idx in range(target_ticks):
+        if deadline_ts is not None and time.monotonic() > deadline_ts:
+            timed_out = True
+            log_event(
+                logger,
+                logging.WARNING,
+                "stage_timeout_warning",
+                "Stage deadline reached during depth sampling",
+                stage="depth",
+                elapsed_s=round(time.monotonic() - start, 2),
+                timeout_s=timeout_s,
+                tick_idx=tick_idx,
+            )
+            break
         tick_successful = False
         for symbol in symbols:
+            if deadline_ts is not None and time.monotonic() > deadline_ts:
+                timed_out = True
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "stage_timeout_warning",
+                    "Stage deadline reached during depth sampling",
+                    stage="depth",
+                    elapsed_s=round(time.monotonic() - start, 2),
+                    timeout_s=timeout_s,
+                    tick_idx=tick_idx,
+                )
+                break
             depth_requests_total += 1
             state = symbol_states[symbol]
             latency_ms = None
@@ -165,6 +195,9 @@ def run_depth_check(
                 time.sleep(backoff_s)
                 backoff_s = min(backoff_s * 2, 8)
 
+        if timed_out:
+            break
+
         if tick_successful:
             ticks_success += 1
         else:
@@ -175,6 +208,7 @@ def run_depth_check(
         if sleep_s > 0:
             time.sleep(sleep_s)
 
+    elapsed_s = time.monotonic() - start
     results: list[DepthSymbolMetrics] = []
     for symbol in symbols:
         state = symbol_states[symbol]
@@ -250,4 +284,6 @@ def run_depth_check(
         depth_requests_total=depth_requests_total,
         depth_fail_total=depth_fail_total,
         depth_symbols_pass_total=pass_depth_count,
+        timed_out=timed_out,
+        elapsed_s=elapsed_s,
     )
