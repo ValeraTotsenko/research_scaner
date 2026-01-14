@@ -208,7 +208,8 @@ def run_spread_sampling(
 
     elapsed_s = time.monotonic() - start
     ticks_total = tick_success + tick_fail
-    uptime = tick_success / target_ticks if target_ticks else 0.0
+    uptime = tick_success / ticks_total if ticks_total else 0.0
+    uptime = max(0.0, min(uptime, 1.0))
     low_quality = uptime < spread_cfg.min_uptime
 
     log_event(
