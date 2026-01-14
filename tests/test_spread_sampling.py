@@ -77,3 +77,22 @@ def test_rate_limit_degrades_uptime(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
     assert result.uptime == pytest.approx(0.5)
     assert result.low_quality is True
+
+
+def test_uptime_full_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    client = FakeBookTickerClient(
+        [
+            [{"symbol": "BTCUSDT", "bidPrice": "10", "askPrice": "11"}],
+            [{"symbol": "BTCUSDT", "bidPrice": "12", "askPrice": "13"}],
+        ]
+    )
+    cfg = SamplingConfig(
+        spread=SpreadSamplingConfig(duration_s=2, interval_s=1, min_uptime=0.9),
+        raw=RawSamplingConfig(enabled=False, gzip=True),
+    )
+    result = run_spread_sampling(client, ["BTCUSDT"], cfg, tmp_path)
+
+    assert result.ticks_success == 2
+    assert result.ticks_fail == 0
+    assert result.uptime == pytest.approx(1.0)
