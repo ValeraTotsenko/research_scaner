@@ -10,6 +10,8 @@ from scanner.config import AppConfig
 from scanner.io.depth_export import export_depth_metrics, export_summary_enriched
 from scanner.io.summary_export import SUMMARY_COLUMNS, export_summary
 from scanner.models.depth import DepthSymbolMetrics
+from scanner import __version__
+from scanner.pipeline.state import PIPELINE_SPEC_VERSION
 from scanner.report.report_md import generate_report
 
 
@@ -20,6 +22,8 @@ def _write_run_meta(run_dir: Path) -> None:
         "git_commit": "deadbeef",
         "config": {"runtime": {"run_name": "demo"}},
         "status": "success",
+        "scanner_version": __version__,
+        "spec_version": PIPELINE_SPEC_VERSION,
     }
     (run_dir / "run_meta.json").write_text(json.dumps(run_meta), encoding="utf-8")
 

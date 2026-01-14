@@ -18,13 +18,26 @@ pip install -e .
 ### Run
 
 ```bash
-python -m scanner --config config.yaml --output ./output
+python -m scanner run --config config.yaml --output ./output
 ```
 
-Dry-run (validates config and creates run layout only):
+Dry-run (prints plan + validates artifacts without executing stages):
 
 ```bash
-python -m scanner --config config.yaml --output ./output --dry-run
+python -m scanner run --config config.yaml --output ./output --dry-run
+```
+
+Run a subset of stages:
+
+```bash
+python -m scanner run --config config.yaml --output ./output --from universe --to score
+python -m scanner run --config config.yaml --output ./output --stages universe,spread,score
+```
+
+Resume a previous run after a crash:
+
+```bash
+python -m scanner run --config config.yaml --output ./output --run-id 20260113_220501Z_ab12cd --resume
 ```
 
 ### Example config
@@ -64,3 +77,4 @@ The run folder will contain:
 - `report.md` (human-readable summary)
 - `shortlist.csv` (top candidates)
 - `run_bundle.zip` (portable bundle with summary/depth/meta/config/report)
+- `pipeline_state.json` (stage execution state and errors)

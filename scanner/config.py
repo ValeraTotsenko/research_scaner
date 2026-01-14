@@ -123,6 +123,15 @@ class ReportConfig(BaseModel):
     include_raw_in_bundle: bool = Field(default=False)
 
 
+class PipelineConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resume: bool = Field(default=True)
+    fail_fast: bool = Field(default=True)
+    continue_on_error: bool = Field(default=False)
+    artifact_validation: str = Field(default="strict")
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -135,6 +144,7 @@ class AppConfig(BaseModel):
     fees: FeesConfig = Field(default_factory=FeesConfig)
     depth: DepthConfig = Field(default_factory=DepthConfig)
     report: ReportConfig = Field(default_factory=ReportConfig)
+    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
 
 
 @dataclass(frozen=True)
