@@ -40,6 +40,7 @@ class UniverseConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     quote_asset: str = Field(default="USDT")
+    allowed_exchange_status: list[str] = Field(default_factory=lambda: ["1"])
     min_quote_volume_24h: float = Field(default=100_000, ge=0)
     min_trades_24h: int = Field(default=200, ge=0)
     use_quote_volume_estimate: bool = Field(default=True)

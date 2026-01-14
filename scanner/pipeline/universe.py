@@ -46,7 +46,7 @@ def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
     exchange_info = client.get_exchange_info()
     symbols_payload = exchange_info.get("symbols", [])
     candidates: list[str] = []
-    unexpected_status: list[str] = []
+    status_rejects: dict[str, str] = {}
 
     for entry in symbols_payload:
         if not isinstance(entry, dict):
@@ -58,18 +58,10 @@ def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
             continue
         candidates.append(symbol)
         status = entry.get("status")
-        if status and status != "TRADING":
-            unexpected_status.append(f"{symbol}:{status}")
-
-    if unexpected_status:
-        log_event(
-            logger,
-            logging.WARNING,
-            "universe_unexpected_status",
-            "Unexpected symbol status in exchangeInfo",
-            count=len(unexpected_status),
-            sample=unexpected_status[:5],
-        )
+        if status is not None:
+            status_value = str(status)
+            if status_value not in cfg.allowed_exchange_status:
+                status_rejects[symbol] = status_value
 
     default_symbols = client.get_default_symbols()
     if not default_symbols:
@@ -79,7 +71,11 @@ def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
     rejects: list[UniverseReject] = []
     tradable: list[str] = []
     for symbol in candidates:
-        if symbol not in default_set:
+        if symbol in status_rejects:
+            rejects.append(
+                UniverseReject(symbol=symbol, reason="exchange_status_not_allowed")
+            )
+        elif symbol not in default_set:
             rejects.append(UniverseReject(symbol=symbol, reason="not_in_default_symbols"))
         else:
             tradable.append(symbol)
