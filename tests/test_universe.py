@@ -101,3 +101,104 @@ def test_default_symbols_empty_fails() -> None:
 
     with pytest.raises(UniverseBuildError):
         build_universe(client, cfg)
+
+
+def test_quote_volume_estimate_allows_missing_quote_volume() -> None:
+    client = StubClient(
+        exchange_info={"symbols": [{"symbol": "ESTUSDT", "quoteAsset": "USDT"}]},
+        default_symbols=["ESTUSDT"],
+        tickers=[
+            {
+                "symbol": "ESTUSDT",
+                "quoteVolume": None,
+                "volume": "100",
+                "lastPrice": "2.5",
+                "count": None,
+            }
+        ],
+    )
+    cfg = UniverseConfig(min_quote_volume_24h=200, min_trades_24h=10, require_trade_count=False)
+
+    result = build_universe(client, cfg)
+
+    assert result.symbols == ["ESTUSDT"]
+
+
+def test_missing_trade_count_rejected_when_required() -> None:
+    client = StubClient(
+        exchange_info={
+            "symbols": [
+                {"symbol": "KEEPUSDT", "quoteAsset": "USDT"},
+                {"symbol": "MISSCOUNTUSDT", "quoteAsset": "USDT"},
+            ]
+        },
+        default_symbols=["KEEPUSDT", "MISSCOUNTUSDT"],
+        tickers=[
+            {"symbol": "KEEPUSDT", "quoteVolume": "1000", "count": 10},
+            {"symbol": "MISSCOUNTUSDT", "quoteVolume": "1000", "count": None},
+        ],
+    )
+    cfg = UniverseConfig(min_quote_volume_24h=0, min_trades_24h=0, require_trade_count=True)
+
+    result = build_universe(client, cfg)
+
+    assert result.symbols == ["KEEPUSDT"]
+    assert any(
+        reject.symbol == "MISSCOUNTUSDT" and reject.reason == "missing_trade_count"
+        for reject in result.rejects
+    )
+
+
+def test_missing_last_price_rejects_estimate() -> None:
+    client = StubClient(
+        exchange_info={
+            "symbols": [
+                {"symbol": "KEEPUSDT", "quoteAsset": "USDT"},
+                {"symbol": "MISSLASTUSDT", "quoteAsset": "USDT"},
+            ]
+        },
+        default_symbols=["KEEPUSDT", "MISSLASTUSDT"],
+        tickers=[
+            {"symbol": "KEEPUSDT", "quoteVolume": "1000", "count": 10},
+            {"symbol": "MISSLASTUSDT", "quoteVolume": None, "volume": "100", "lastPrice": None},
+        ],
+    )
+    cfg = UniverseConfig(min_quote_volume_24h=0, min_trades_24h=0)
+
+    result = build_universe(client, cfg)
+
+    assert result.symbols == ["KEEPUSDT"]
+    assert any(
+        reject.symbol == "MISSLASTUSDT" and reject.reason == "missing_last_price_for_estimate"
+        for reject in result.rejects
+    )
+
+
+def test_missing_volume_rejects_missing_24h_volume() -> None:
+    client = StubClient(
+        exchange_info={
+            "symbols": [
+                {"symbol": "KEEPUSDT", "quoteAsset": "USDT"},
+                {"symbol": "MISSVOLUSDT", "quoteAsset": "USDT"},
+            ]
+        },
+        default_symbols=["KEEPUSDT", "MISSVOLUSDT"],
+        tickers=[
+            {"symbol": "KEEPUSDT", "quoteVolume": "1000", "count": 10},
+            {
+                "symbol": "MISSVOLUSDT",
+                "quoteVolume": None,
+                "volume": "",
+                "lastPrice": "10",
+            },
+        ],
+    )
+    cfg = UniverseConfig(min_quote_volume_24h=0, min_trades_24h=0)
+
+    result = build_universe(client, cfg)
+
+    assert result.symbols == ["KEEPUSDT"]
+    assert any(
+        reject.symbol == "MISSVOLUSDT" and reject.reason == "missing_24h_volume"
+        for reject in result.rejects
+    )

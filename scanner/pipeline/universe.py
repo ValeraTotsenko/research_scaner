@@ -117,35 +117,61 @@ def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
             continue
 
         quote_volume = _parse_float(ticker.get("quoteVolume"))
-        if quote_volume is None:
-            quote_volume = _parse_float(ticker.get("volume"))
-            if quote_volume is None:
+        if quote_volume is None and cfg.use_quote_volume_estimate:
+            volume = _parse_float(ticker.get("volume"))
+            last_price = _parse_float(ticker.get("lastPrice"))
+            if volume is None:
                 rejects.append(UniverseReject(symbol=symbol, reason="missing_24h_volume"))
                 continue
+            if last_price is None or last_price <= 0:
+                rejects.append(
+                    UniverseReject(symbol=symbol, reason="missing_last_price_for_estimate")
+                )
+                continue
+            quote_volume = volume * last_price
             log_event(
                 logger,
-                logging.WARNING,
-                "universe_volume_fallback",
-                "quoteVolume missing; falling back to volume",
+                logging.INFO,
+                "universe_volume_estimated",
+                "quoteVolume missing; estimated notional volume",
                 symbol=symbol,
+                volume=volume,
+                lastPrice=last_price,
+                quoteVolume_est=quote_volume,
             )
 
+        if quote_volume is None:
+            rejects.append(UniverseReject(symbol=symbol, reason="missing_24h_volume"))
+            continue
+
         trade_count = _parse_int(ticker.get("count"))
-        if trade_count is None:
-            trade_count = 0
+        if trade_count is None and cfg.require_trade_count:
+            rejects.append(UniverseReject(symbol=symbol, reason="missing_trade_count"))
+            continue
 
         if quote_volume < cfg.min_quote_volume_24h:
             rejects.append(UniverseReject(symbol=symbol, reason="min_quote_volume_24h"))
             continue
 
-        if trade_count < cfg.min_trades_24h:
+        if trade_count is not None and trade_count < cfg.min_trades_24h:
             rejects.append(UniverseReject(symbol=symbol, reason="min_trades_24h"))
             continue
 
         kept.append(symbol)
 
+    top_rejects = _top_rejects(rejects)
     if not kept:
         stats = UniverseStats(total=len(candidates), kept=0, rejected=len(rejects))
+        log_event(
+            logger,
+            logging.INFO,
+            "universe_reject_summary",
+            "Universe reject summary",
+            total=stats.total,
+            kept=stats.kept,
+            rejected=stats.rejected,
+            top_reject_reasons=top_rejects,
+        )
         log_event(
             logger,
             logging.ERROR,
@@ -154,7 +180,7 @@ def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
             total=stats.total,
             kept=stats.kept,
             rejected=stats.rejected,
-            top_reject_reasons=_top_rejects(rejects),
+            top_reject_reasons=top_rejects,
         )
         raise UniverseBuildError("Universe filtered to 0 symbols; relax thresholds")
 
@@ -163,12 +189,22 @@ def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
     log_event(
         logger,
         logging.INFO,
+        "universe_reject_summary",
+        "Universe reject summary",
+        total=stats.total,
+        kept=stats.kept,
+        rejected=stats.rejected,
+        top_reject_reasons=top_rejects,
+    )
+    log_event(
+        logger,
+        logging.INFO,
         "universe_built",
         "Universe built",
         total=stats.total,
         kept=stats.kept,
         rejected=stats.rejected,
-        top_reject_reasons=_top_rejects(rejects),
+        top_reject_reasons=top_rejects,
     )
 
     return UniverseResult(symbols=kept, rejects=rejects, stats=stats)

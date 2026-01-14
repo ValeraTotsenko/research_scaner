@@ -1,5 +1,16 @@
 # SCAN-005 Stats, Scoring, PASS/FAIL, Summary Export
 
+## Universe filters (24h notional)
+
+Universe selection uses USDT-notional 24h volume and optional trade count filters.
+
+- `min_quote_volume_24h` is interpreted as USDT notional volume.
+- If `quoteVolume` is missing and `use_quote_volume_estimate = true`, estimate
+  `quoteVolume_est = volume * lastPrice`.
+- If both `quoteVolume` and estimated notional are unavailable, the symbol is rejected.
+- `min_trades_24h` is applied only when `count` is present or when
+  `require_trade_count = true`.
+
 ## Spread stats inputs
 
 Each spread sample provides `bid` and `ask` for a single symbol at a sampling tick.
