@@ -14,6 +14,8 @@ class SpreadSampleResult:
     uptime: float
     low_quality: bool
     raw_path: Path | None
+    timed_out: bool
+    elapsed_s: float
 
 
 def compute_spread_bps(bid: float, ask: float) -> float:

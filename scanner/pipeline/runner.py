@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
@@ -12,6 +12,7 @@ from scanner.config import AppConfig
 from scanner.mexc.client import MexcClient
 from scanner.obs.logging import log_event
 from scanner.obs.metrics import update_metrics
+from scanner.pipeline.errors import StageTimeoutError
 from scanner.pipeline.stages import (
     STAGE_ORDER,
     StageContext,
@@ -146,6 +147,12 @@ def run_pipeline(
         dry_run=options.dry_run,
     )
 
+    run_start = time.monotonic()
+    run_deadline = None
+    if config.pipeline.total_timeout_s > 0:
+        run_deadline = run_start + config.pipeline.total_timeout_s
+    run_timed_out = False
+
     try:
         if options.dry_run:
             for name in stage_plan:
@@ -166,6 +173,13 @@ def run_pipeline(
         exit_code = EXIT_OK
         for name in stage_plan:
             stage = stage_map[name]
+            stage_timeout_s = config.pipeline.stage_timeouts_s.get(name, 0)
+            stage_deadline = None
+            if stage_timeout_s > 0:
+                stage_deadline = time.monotonic() + stage_timeout_s
+            if run_deadline is not None:
+                stage_deadline = min(stage_deadline, run_deadline) if stage_deadline else run_deadline
+            stage_ctx = replace(ctx, stage_deadline_ts=stage_deadline)
             input_errors = stage.validate_inputs(ctx)
             if input_errors:
                 state.set_stage(
@@ -187,7 +201,16 @@ def run_pipeline(
                 return EXIT_VALIDATION_ERROR
 
             output_errors = stage.validate_outputs(ctx)
-            if options.resume and not options.force and not output_errors:
+            stage_state = state.get_stage(name)
+            stage_previously_timed_out = bool(stage_state.metrics.get("timed_out")) or (
+                stage_state.error and stage_state.error.get("type") == StageTimeoutError.__name__
+            )
+            if (
+                options.resume
+                and not options.force
+                and not output_errors
+                and not stage_previously_timed_out
+            ):
                 state.set_stage(
                     name,
                     status="skipped",
@@ -206,8 +229,54 @@ def run_pipeline(
             log_event(logger, logging.INFO, "stage_start", "Stage started", stage=name)
 
             start = time.monotonic()
+            if stage_deadline is not None and time.monotonic() >= stage_deadline:
+                elapsed_s = time.monotonic() - start
+                timeout_s = max(0.0, stage_deadline - start)
+                error_payload = {
+                    "type": StageTimeoutError.__name__,
+                    "stage": name,
+                    "timeout_s": timeout_s,
+                    "elapsed_s": elapsed_s,
+                }
+                state.set_stage(
+                    name,
+                    status="failed",
+                    finished_at=_now_iso(),
+                    metrics={"timed_out": True, "duration_ms": round(elapsed_s * 1000, 2)},
+                    error=error_payload,
+                )
+                write_pipeline_state(state_path, state)
+                update_metrics(
+                    metrics_path,
+                    increments={
+                        "pipeline_stage_timeouts_total": 1,
+                        "pipeline_stage_failed_total": 1,
+                        **(
+                            {"pipeline_run_timeouts_total": 1}
+                            if run_deadline is not None and stage_deadline == run_deadline and not run_timed_out
+                            else {}
+                        ),
+                    },
+                    gauges={f"stage_elapsed_seconds.{name}": round(elapsed_s, 2)},
+                )
+                run_timed_out = run_timed_out or (run_deadline is not None and stage_deadline == run_deadline)
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "stage_timeout",
+                    "Stage deadline exceeded before start",
+                    stage=name,
+                    elapsed_s=round(elapsed_s, 2),
+                    timeout_s=timeout_s,
+                    action="fail",
+                )
+                failed = True
+                exit_code = max(exit_code, EXIT_STAGE_ERROR)
+                if options.continue_on_error or not options.fail_fast:
+                    continue
+                return EXIT_STAGE_ERROR
             try:
-                metrics = stage.run(ctx) or {}
+                metrics = stage.run(stage_ctx) or {}
             except Exception as exc:  # noqa: BLE001
                 duration_ms = round((time.monotonic() - start) * 1000, 2)
                 state.set_stage(
@@ -218,7 +287,11 @@ def run_pipeline(
                     error={"type": type(exc).__name__, "message": str(exc)},
                 )
                 write_pipeline_state(state_path, state)
-                update_metrics(metrics_path, increments={"pipeline_stage_failed_total": 1})
+                update_metrics(
+                    metrics_path,
+                    increments={"pipeline_stage_failed_total": 1},
+                    gauges={f"stage_elapsed_seconds.{name}": round(duration_ms / 1000, 2)},
+                )
                 log_event(
                     logger,
                     logging.ERROR,
@@ -236,6 +309,62 @@ def run_pipeline(
                 return EXIT_STAGE_ERROR
 
             duration_ms = round((time.monotonic() - start) * 1000, 2)
+            elapsed_s = duration_ms / 1000
+            timed_out = bool(metrics.get("timed_out"))
+            if timed_out:
+                timeout_s = max(0.0, (stage_deadline - start) if stage_deadline else 0.0)
+                error_payload = {
+                    "type": StageTimeoutError.__name__,
+                    "stage": name,
+                    "timeout_s": timeout_s,
+                    "elapsed_s": elapsed_s,
+                }
+                action = config.pipeline.timeout_behavior
+                state.set_stage(
+                    name,
+                    status="success" if action == "partial_success" else "failed",
+                    finished_at=_now_iso(),
+                    metrics={"duration_ms": duration_ms, **metrics},
+                    error=error_payload,
+                )
+                write_pipeline_state(state_path, state)
+                update_metrics(
+                    metrics_path,
+                    increments={
+                        "pipeline_stage_timeouts_total": 1,
+                        **(
+                            {"pipeline_run_timeouts_total": 1}
+                            if run_deadline is not None and stage_deadline == run_deadline and not run_timed_out
+                            else {}
+                        ),
+                        **(
+                            {"pipeline_stage_success_total": 1}
+                            if action == "partial_success"
+                            else {"pipeline_stage_failed_total": 1}
+                        ),
+                    },
+                    gauges={f"stage_elapsed_seconds.{name}": round(elapsed_s, 2)},
+                )
+                run_timed_out = run_timed_out or (run_deadline is not None and stage_deadline == run_deadline)
+                log_event(
+                    logger,
+                    logging.ERROR if action == "fail" else logging.WARNING,
+                    "stage_timeout",
+                    "Stage deadline exceeded",
+                    stage=name,
+                    elapsed_s=round(elapsed_s, 2),
+                    timeout_s=timeout_s,
+                    action=action,
+                )
+                if action == "partial_success":
+                    continue
+                failed = True
+                exit_code = max(exit_code, EXIT_STAGE_ERROR)
+                if options.continue_on_error or not options.fail_fast:
+                    continue
+                return EXIT_STAGE_ERROR
+
+            update_metrics(metrics_path, gauges={f"stage_elapsed_seconds.{name}": round(elapsed_s, 2)})
             output_errors = stage.validate_outputs(ctx)
             if output_errors:
                 state.set_stage(

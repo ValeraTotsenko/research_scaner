@@ -34,6 +34,8 @@ def run_spread_sampling(
     symbols: list[str],
     cfg: SamplingConfig,
     out_dir: Path,
+    *,
+    deadline_ts: float | None = None,
 ) -> SpreadSampleResult:
     logger = logging.getLogger(__name__)
     spread_cfg = cfg.spread
@@ -56,7 +58,24 @@ def run_spread_sampling(
             raw_writer.__enter__()
 
         start = time.monotonic()
+        timed_out = False
+        timeout_s = max(0.0, deadline_ts - start) if deadline_ts is not None else None
+
         for tick_idx in range(target_ticks):
+            if deadline_ts is not None and time.monotonic() > deadline_ts:
+                timed_out = True
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "stage_timeout_warning",
+                    "Stage deadline reached during spread sampling",
+                    stage="spread",
+                    elapsed_s=round(time.monotonic() - start, 2),
+                    timeout_s=timeout_s,
+                    tick_idx=tick_idx,
+                )
+                break
+
             tick_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             symbols_seen: set[str] = set()
             latency_ms = None
@@ -164,6 +183,20 @@ def run_spread_sampling(
                 latency_ms=latency_ms,
             )
 
+            if deadline_ts is not None and time.monotonic() > deadline_ts:
+                timed_out = True
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "stage_timeout_warning",
+                    "Stage deadline reached during spread sampling",
+                    stage="spread",
+                    elapsed_s=round(time.monotonic() - start, 2),
+                    timeout_s=timeout_s,
+                    tick_idx=tick_idx,
+                )
+                break
+
             next_deadline = start + (tick_idx + 1) * spread_cfg.interval_s
             now = time.monotonic()
             sleep_s = next_deadline - now
@@ -173,6 +206,7 @@ def run_spread_sampling(
         if raw_writer:
             raw_writer.close()
 
+    elapsed_s = time.monotonic() - start
     ticks_total = tick_success + tick_fail
     uptime = tick_success / target_ticks if target_ticks else 0.0
     low_quality = uptime < spread_cfg.min_uptime
@@ -188,6 +222,7 @@ def run_spread_sampling(
         ticks_total=ticks_total,
         ticks_success=tick_success,
         ticks_fail=tick_fail,
+        timed_out=timed_out,
     )
 
     return SpreadSampleResult(
@@ -199,4 +234,6 @@ def run_spread_sampling(
         uptime=uptime,
         low_quality=low_quality,
         raw_path=raw_writer.path if raw_writer else None,
+        timed_out=timed_out,
+        elapsed_s=elapsed_s,
     )

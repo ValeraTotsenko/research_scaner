@@ -38,6 +38,7 @@ class StageContext:
     client: MexcClient | None
     metrics_path: Path
     artifact_validation: str
+    stage_deadline_ts: float | None = None
 
 
 @dataclass(frozen=True)
@@ -309,7 +310,13 @@ def _run_spread(ctx: StageContext) -> dict[str, object]:
     if ctx.client is None:
         raise RuntimeError("MEXC client required for spread stage")
     symbols = _load_universe_symbols(ctx.run_dir)
-    result = run_spread_sampling(ctx.client, symbols, ctx.config.sampling, ctx.run_dir)
+    result = run_spread_sampling(
+        ctx.client,
+        symbols,
+        ctx.config.sampling,
+        ctx.run_dir,
+        deadline_ts=ctx.stage_deadline_ts,
+    )
     return {
         "ticks_total": result.ticks_success + result.ticks_fail,
         "ticks_success": result.ticks_success,
@@ -317,6 +324,8 @@ def _run_spread(ctx: StageContext) -> dict[str, object]:
         "uptime": result.uptime,
         "invalid_quotes": result.invalid_quotes,
         "missing_quotes": result.missing_quotes,
+        "timed_out": result.timed_out,
+        "elapsed_s": result.elapsed_s,
     }
 
 
@@ -359,7 +368,13 @@ def _run_depth(ctx: StageContext) -> dict[str, object]:
     if ctx.client is None:
         raise RuntimeError("MEXC client required for depth stage")
     candidates = _read_summary_results(ctx.run_dir)
-    result = run_depth_check(ctx.client, candidates, ctx.config, ctx.run_dir)
+    result = run_depth_check(
+        ctx.client,
+        candidates,
+        ctx.config,
+        ctx.run_dir,
+        deadline_ts=ctx.stage_deadline_ts,
+    )
     return {
         "ticks_total": result.ticks_success + result.ticks_fail,
         "ticks_success": result.ticks_success,
@@ -367,6 +382,8 @@ def _run_depth(ctx: StageContext) -> dict[str, object]:
         "depth_requests_total": result.depth_requests_total,
         "depth_fail_total": result.depth_fail_total,
         "depth_symbols_pass_total": result.depth_symbols_pass_total,
+        "timed_out": result.timed_out,
+        "elapsed_s": result.elapsed_s,
     }
 
 
