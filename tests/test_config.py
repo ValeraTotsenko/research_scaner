@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import pytest
@@ -38,3 +39,26 @@ def test_invalid_config(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError):
         load_config(config_path)
+
+
+def test_spread_timeout_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+        sampling:
+          spread:
+            duration_s: 300
+            interval_s: 5
+        pipeline:
+          stage_timeouts_s:
+            spread: 300
+          safety_margin_s: 5
+          spread_timeout_behavior: warn
+        """,
+        encoding="utf-8",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        load_config(config_path)
+
+    assert "Spread sampling duration_s exceeds the allowed stage timeout buffer" in caplog.text

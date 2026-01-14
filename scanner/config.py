@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -137,6 +138,8 @@ class PipelineConfig(BaseModel):
     stage_timeouts_s: dict[str, int] = Field(default_factory=dict)
     timeout_behavior: Literal["fail", "partial_success"] = Field(default="fail")
     timeout_grace_s: int = Field(default=2, ge=0)
+    safety_margin_s: int = Field(default=5, ge=0)
+    spread_timeout_behavior: Literal["warn", "error"] = Field(default="warn")
 
     @field_validator("stage_timeouts_s")
     @classmethod
@@ -171,6 +174,7 @@ class AppConfig(BaseModel):
         for stage, timeout_s in defaults.items():
             stage_timeouts.setdefault(stage, timeout_s)
         self.pipeline.stage_timeouts_s = stage_timeouts
+        _validate_spread_timeout(self)
         return self
 
 
@@ -182,6 +186,24 @@ def _default_stage_timeouts(sampling: SamplingConfig) -> dict[str, int]:
         "depth": sampling.depth.duration_s * 2 + 60,
         "report": 300,
     }
+
+
+def _validate_spread_timeout(config: AppConfig) -> None:
+    stage_timeout_s = config.pipeline.stage_timeouts_s.get("spread", 0)
+    if stage_timeout_s <= 0:
+        return
+    safety_margin_s = max(0, config.pipeline.safety_margin_s)
+    spread_duration_s = config.sampling.spread.duration_s
+    threshold_s = stage_timeout_s - safety_margin_s
+    if spread_duration_s >= threshold_s:
+        message = (
+            "Spread sampling duration_s exceeds the allowed stage timeout buffer "
+            f"(duration_s={spread_duration_s}, stage_timeout_s={stage_timeout_s}, "
+            f"safety_margin_s={safety_margin_s})."
+        )
+        if config.pipeline.spread_timeout_behavior == "error":
+            raise ValueError(message)
+        logging.getLogger(__name__).warning(message)
 
 
 @dataclass(frozen=True)

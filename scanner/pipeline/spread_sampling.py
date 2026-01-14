@@ -62,7 +62,8 @@ def run_spread_sampling(
         timeout_s = max(0.0, deadline_ts - start) if deadline_ts is not None else None
 
         for tick_idx in range(target_ticks):
-            if deadline_ts is not None and time.monotonic() > deadline_ts:
+            now = time.monotonic()
+            if deadline_ts is not None and now > deadline_ts:
                 timed_out = True
                 log_event(
                     logger,
@@ -70,7 +71,7 @@ def run_spread_sampling(
                     "stage_timeout_warning",
                     "Stage deadline reached during spread sampling",
                     stage="spread",
-                    elapsed_s=round(time.monotonic() - start, 2),
+                    elapsed_s=round(now - start, 2),
                     timeout_s=timeout_s,
                     tick_idx=tick_idx,
                 )
@@ -183,7 +184,8 @@ def run_spread_sampling(
                 latency_ms=latency_ms,
             )
 
-            if deadline_ts is not None and time.monotonic() > deadline_ts:
+            now = time.monotonic()
+            if deadline_ts is not None and now > deadline_ts:
                 timed_out = True
                 log_event(
                     logger,
@@ -191,14 +193,29 @@ def run_spread_sampling(
                     "stage_timeout_warning",
                     "Stage deadline reached during spread sampling",
                     stage="spread",
-                    elapsed_s=round(time.monotonic() - start, 2),
+                    elapsed_s=round(now - start, 2),
                     timeout_s=timeout_s,
                     tick_idx=tick_idx,
                 )
                 break
 
+            if tick_idx + 1 >= target_ticks:
+                break
+
             next_deadline = start + (tick_idx + 1) * spread_cfg.interval_s
             now = time.monotonic()
+            if deadline_ts is not None and next_deadline > deadline_ts:
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "stage_timeout_warning",
+                    "Stage deadline would be reached before next spread tick",
+                    stage="spread",
+                    elapsed_s=round(now - start, 2),
+                    timeout_s=timeout_s,
+                    tick_idx=tick_idx,
+                )
+                break
             sleep_s = next_deadline - now
             if sleep_s > 0:
                 time.sleep(sleep_s)
