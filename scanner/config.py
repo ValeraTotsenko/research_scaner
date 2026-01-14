@@ -136,6 +136,7 @@ class PipelineConfig(BaseModel):
     total_timeout_s: int = Field(default=0, ge=0)
     stage_timeouts_s: dict[str, int] = Field(default_factory=dict)
     timeout_behavior: Literal["fail", "partial_success"] = Field(default="fail")
+    timeout_grace_s: int = Field(default=2, ge=0)
 
     @field_validator("stage_timeouts_s")
     @classmethod

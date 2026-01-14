@@ -22,3 +22,4 @@ pipeline:
     depth: 3600
     report: 300
   timeout_behavior: "fail"
+  timeout_grace_s: 2
