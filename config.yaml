@@ -1,0 +1,7 @@
+mexc:
+  base_url: https://api.mexc.com
+runtime:
+  run_name: "example"
+  timezone: "UTC"
+obs:
+  log_jsonl: true
