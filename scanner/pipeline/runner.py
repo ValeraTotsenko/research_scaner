@@ -12,7 +12,7 @@ from scanner import __version__
 from scanner.config import AppConfig
 from scanner.mexc.client import MexcClient
 from scanner.obs.logging import log_event
-from scanner.obs.metrics import update_metrics
+from scanner.obs.metrics import update_http_metrics, update_metrics
 from scanner.pipeline.errors import StageTimeoutError
 from scanner.pipeline.stages import (
     STAGE_ORDER,
@@ -161,6 +161,10 @@ def run_pipeline(
         artifact_validation=options.artifact_validation,
     )
 
+    def _flush_http_metrics() -> None:
+        if ctx.client:
+            update_http_metrics(metrics_path, ctx.client.metrics)
+
     log_event(
         logger,
         logging.INFO,
@@ -218,6 +222,7 @@ def run_pipeline(
                     error={"type": "ArtifactValidationError", "message": "; ".join(input_errors)},
                 )
                 write_pipeline_state(state_path, state)
+                _flush_http_metrics()
                 log_event(
                     logger,
                     logging.ERROR,
@@ -257,6 +262,7 @@ def run_pipeline(
                 )
                 write_pipeline_state(state_path, state)
                 update_metrics(metrics_path, increments={"pipeline_stage_skipped_total": 1})
+                _flush_http_metrics()
                 log_event(logger, logging.INFO, "stage_skip", "Stage skipped", stage=name)
                 continue
 
@@ -295,6 +301,7 @@ def run_pipeline(
                     },
                     gauges={f"stage_elapsed_seconds.{name}": round(elapsed_s, 2)},
                 )
+                _flush_http_metrics()
                 run_timed_out = run_timed_out or (run_deadline is not None and stage_deadline == run_deadline)
                 log_event(
                     logger,
@@ -337,6 +344,7 @@ def run_pipeline(
                     increments={"pipeline_stage_failed_total": 1},
                     gauges={f"stage_elapsed_seconds.{name}": round(duration_ms / 1000, 2)},
                 )
+                _flush_http_metrics()
                 log_event(
                     logger,
                     logging.ERROR,
@@ -407,6 +415,7 @@ def run_pipeline(
                     },
                     gauges={f"stage_elapsed_seconds.{name}": round(elapsed_s, 2)},
                 )
+                _flush_http_metrics()
                 run_timed_out = run_timed_out or (run_deadline is not None and stage_deadline == run_deadline)
                 log_event(
                     logger,
@@ -448,6 +457,7 @@ def run_pipeline(
                 )
                 write_pipeline_state(state_path, state)
                 update_metrics(metrics_path, increments={"pipeline_stage_failed_total": 1})
+                _flush_http_metrics()
                 log_event(
                     logger,
                     logging.ERROR,
@@ -481,6 +491,7 @@ def run_pipeline(
             )
             write_pipeline_state(state_path, state)
             update_metrics(metrics_path, increments={"pipeline_stage_success_total": 1})
+            _flush_http_metrics()
             log_event(
                 logger,
                 logging.INFO,
@@ -514,4 +525,5 @@ def run_pipeline(
         )
         return exit_code
     finally:
+        _flush_http_metrics()
         ctx.client.close()

@@ -31,6 +31,9 @@ def create_run_layout(output_dir: Path, run_id: str, config: AppConfig) -> RunLa
     metrics_payload = {
         "requests_total": 0,
         "errors_total": 0,
+        "retries_total": 0,
+        "requests_by_status": {},
+        "latency_ms": {"count": 0, "min": None, "max": None, "buckets": {}},
         "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     metrics_path.write_text(json.dumps(metrics_payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -58,6 +61,9 @@ def ensure_run_layout(output_dir: Path, run_id: str, config: AppConfig) -> RunLa
         metrics_payload = {
             "requests_total": 0,
             "errors_total": 0,
+            "retries_total": 0,
+            "requests_by_status": {},
+            "latency_ms": {"count": 0, "min": None, "max": None, "buckets": {}},
             "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
         metrics_path.write_text(json.dumps(metrics_payload, ensure_ascii=False, indent=2), encoding="utf-8")

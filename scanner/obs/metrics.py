@@ -4,6 +4,23 @@ import json
 from pathlib import Path
 from typing import Any
 
+from scanner.mexc.client import MexcMetrics
+
+_LATENCY_BUCKETS_MS = (25, 50, 100, 250, 500, 1000, 2000, 5000)
+
+
+def _read_metrics(metrics_path: Path) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if metrics_path.exists():
+        raw = metrics_path.read_text(encoding="utf-8").strip()
+        if raw:
+            payload = json.loads(raw)
+    return payload
+
+
+def _write_metrics(metrics_path: Path, payload: dict[str, Any]) -> None:
+    metrics_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
 
 def update_metrics(
     metrics_path: Path,
@@ -11,11 +28,7 @@ def update_metrics(
     increments: dict[str, int] | None = None,
     gauges: dict[str, int | float] | None = None,
 ) -> None:
-    payload: dict[str, Any] = {}
-    if metrics_path.exists():
-        raw = metrics_path.read_text(encoding="utf-8").strip()
-        if raw:
-            payload = json.loads(raw)
+    payload = _read_metrics(metrics_path)
 
     if increments:
         for key, value in increments.items():
@@ -25,4 +38,45 @@ def update_metrics(
         for key, value in gauges.items():
             payload[key] = value
 
-    metrics_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_metrics(metrics_path, payload)
+
+
+def update_http_metrics(metrics_path: Path, metrics: MexcMetrics) -> None:
+    payload = _read_metrics(metrics_path)
+
+    requests_total = sum(metrics.http_requests_total.values())
+    retries_total = sum(metrics.http_retries_total.values())
+    requests_by_status: dict[str, int] = {}
+    errors_total = 0
+    for (_endpoint, status), count in metrics.http_requests_total.items():
+        requests_by_status[status] = requests_by_status.get(status, 0) + count
+        try:
+            status_code = int(status)
+        except (TypeError, ValueError):
+            errors_total += count
+        else:
+            if not 200 <= status_code < 300:
+                errors_total += count
+
+    latencies = [value for values in metrics.http_latency_ms.values() for value in values]
+    buckets: dict[str, int] = {}
+    for bound in _LATENCY_BUCKETS_MS:
+        buckets[str(bound)] = sum(1 for value in latencies if value <= bound)
+    buckets["+inf"] = len(latencies)
+
+    payload.update(
+        {
+            "requests_total": requests_total,
+            "errors_total": errors_total,
+            "retries_total": retries_total,
+            "requests_by_status": requests_by_status,
+            "latency_ms": {
+                "count": len(latencies),
+                "min": min(latencies) if latencies else None,
+                "max": max(latencies) if latencies else None,
+                "buckets": buckets,
+            },
+        }
+    )
+
+    _write_metrics(metrics_path, payload)
