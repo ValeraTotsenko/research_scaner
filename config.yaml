@@ -66,9 +66,9 @@ pipeline:
   total_timeout_s: 0
   stage_timeouts_s:
     universe: 300
-    spread: 3660
+    spread: 300
     score: 300
-    depth: 2460
+    depth: 300
     report: 300
   timeout_behavior: "fail"
   timeout_grace_s: 2
