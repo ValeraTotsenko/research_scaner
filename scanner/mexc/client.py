@@ -62,9 +62,10 @@ class MexcClient:
 
     def get_default_symbols(self) -> list[str]:
         payload = self._request("GET", "/api/v3/defaultSymbols")
-        if not isinstance(payload, list) or not all(isinstance(item, str) for item in payload):
+        symbols = self._coerce_symbol_list(payload)
+        if symbols is None:
             raise FatalHttpError("defaultSymbols response must be a list of strings", payload=payload)
-        return payload
+        return symbols
 
     def get_ticker_24hr(self) -> list[dict]:
         payload = self._request("GET", "/api/v3/ticker/24hr")
@@ -206,6 +207,22 @@ class MexcClient:
         capped = min(self._config.backoff_max_s, base * (2 ** (attempt - 1)))
         jitter = random.uniform(0, base)
         time.sleep(min(self._config.backoff_max_s, capped + jitter))
+
+    @staticmethod
+    def _coerce_symbol_list(payload: Any) -> list[str] | None:
+        if isinstance(payload, list):
+            if all(isinstance(item, str) for item in payload):
+                return payload
+            if all(isinstance(item, dict) for item in payload):
+                symbols = [item.get("symbol") for item in payload if isinstance(item.get("symbol"), str)]
+                return symbols or None
+            return None
+        if isinstance(payload, dict):
+            for key in ("data", "symbols", "defaultSymbols"):
+                value = payload.get(key)
+                if isinstance(value, list):
+                    return MexcClient._coerce_symbol_list(value)
+        return None
 
     def _log_fail(self, endpoint: str, error_type: str) -> None:
         log_event(
