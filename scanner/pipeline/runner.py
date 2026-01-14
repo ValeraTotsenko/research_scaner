@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -73,6 +74,30 @@ def build_stage_plan(
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _min_ticks_success(stage_name: str, config: AppConfig) -> int | None:
+    if stage_name == "spread":
+        spread_cfg = config.sampling.spread
+        target_ticks = max(1, math.ceil(spread_cfg.duration_s / spread_cfg.interval_s))
+        return max(1, math.ceil(target_ticks * spread_cfg.min_uptime))
+    if stage_name == "depth":
+        return 1
+    return None
+
+
+def _has_minimum_data(stage_name: str, metrics: dict[str, object], config: AppConfig) -> bool:
+    ticks_success = metrics.get("ticks_success")
+    if ticks_success is None:
+        return False
+    try:
+        ticks_success_value = int(float(ticks_success))
+    except (TypeError, ValueError):
+        return False
+    min_ticks_success = _min_ticks_success(stage_name, config)
+    if min_ticks_success is None:
+        return False
+    return ticks_success_value >= min_ticks_success
 
 
 def run_pipeline(
@@ -152,6 +177,8 @@ def run_pipeline(
     if config.pipeline.total_timeout_s > 0:
         run_deadline = run_start + config.pipeline.total_timeout_s
     run_timed_out = False
+    run_degraded = False
+    timeout_grace_s = max(0.0, float(config.pipeline.timeout_grace_s))
 
     try:
         if options.dry_run:
@@ -179,7 +206,8 @@ def run_pipeline(
                 stage_deadline = time.monotonic() + stage_timeout_s
             if run_deadline is not None:
                 stage_deadline = min(stage_deadline, run_deadline) if stage_deadline else run_deadline
-            stage_ctx = replace(ctx, stage_deadline_ts=stage_deadline)
+            stage_deadline_grace = stage_deadline + timeout_grace_s if stage_deadline else None
+            stage_ctx = replace(ctx, stage_deadline_ts=stage_deadline_grace)
             input_errors = stage.validate_inputs(ctx)
             if input_errors:
                 state.set_stage(
@@ -197,6 +225,14 @@ def run_pipeline(
                     "Stage preconditions failed",
                     stage=name,
                     errors=input_errors,
+                )
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "stage_end",
+                    "Stage finished",
+                    stage=name,
+                    status="failed",
                 )
                 return EXIT_VALIDATION_ERROR
 
@@ -229,9 +265,9 @@ def run_pipeline(
             log_event(logger, logging.INFO, "stage_start", "Stage started", stage=name)
 
             start = time.monotonic()
-            if stage_deadline is not None and time.monotonic() >= stage_deadline:
+            if stage_deadline_grace is not None and time.monotonic() >= stage_deadline_grace:
                 elapsed_s = time.monotonic() - start
-                timeout_s = max(0.0, stage_deadline - start)
+                timeout_s = max(0.0, stage_deadline - start) if stage_deadline else 0.0
                 error_payload = {
                     "type": StageTimeoutError.__name__,
                     "stage": name,
@@ -270,6 +306,15 @@ def run_pipeline(
                     timeout_s=timeout_s,
                     action="fail",
                 )
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "stage_end",
+                    "Stage finished",
+                    stage=name,
+                    status="failed",
+                    duration_ms=round(elapsed_s * 1000, 2),
+                )
                 failed = True
                 exit_code = max(exit_code, EXIT_STAGE_ERROR)
                 if options.continue_on_error or not options.fail_fast:
@@ -302,6 +347,15 @@ def run_pipeline(
                     error_type=type(exc).__name__,
                     error=str(exc),
                 )
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "stage_end",
+                    "Stage finished",
+                    stage=name,
+                    status="failed",
+                    duration_ms=duration_ms,
+                )
                 failed = True
                 exit_code = max(exit_code, EXIT_STAGE_ERROR)
                 if options.continue_on_error or not options.fail_fast:
@@ -310,21 +364,29 @@ def run_pipeline(
 
             duration_ms = round((time.monotonic() - start) * 1000, 2)
             elapsed_s = duration_ms / 1000
-            timed_out = bool(metrics.get("timed_out"))
+            timeout_s = max(0.0, stage_deadline - start) if stage_deadline else 0.0
+            timed_out = bool(metrics.get("timed_out")) or (
+                stage_deadline is not None and elapsed_s > timeout_s
+            )
             if timed_out:
-                timeout_s = max(0.0, (stage_deadline - start) if stage_deadline else 0.0)
+                output_errors = stage.validate_outputs(ctx)
+                has_outputs = not output_errors
+                has_minimum_data = _has_minimum_data(name, metrics, config)
                 error_payload = {
                     "type": StageTimeoutError.__name__,
                     "stage": name,
                     "timeout_s": timeout_s,
                     "elapsed_s": elapsed_s,
+                    "output_errors": output_errors,
+                    "has_minimum_data": has_minimum_data,
                 }
-                action = config.pipeline.timeout_behavior
+                action = "partial_success" if has_outputs and has_minimum_data else "fail"
+                status = "timeout" if action == "partial_success" else "failed"
                 state.set_stage(
                     name,
-                    status="success" if action == "partial_success" else "failed",
+                    status=status,
                     finished_at=_now_iso(),
-                    metrics={"duration_ms": duration_ms, **metrics},
+                    metrics={"duration_ms": duration_ms, "timed_out": True, **metrics},
                     error=error_payload,
                 )
                 write_pipeline_state(state_path, state)
@@ -356,7 +418,17 @@ def run_pipeline(
                     timeout_s=timeout_s,
                     action=action,
                 )
+                log_event(
+                    logger,
+                    logging.ERROR if action == "fail" else logging.WARNING,
+                    "stage_end",
+                    "Stage finished",
+                    stage=name,
+                    status=status,
+                    duration_ms=duration_ms,
+                )
                 if action == "partial_success":
+                    run_degraded = True
                     continue
                 failed = True
                 exit_code = max(exit_code, EXIT_STAGE_ERROR)
@@ -385,6 +457,15 @@ def run_pipeline(
                     duration_ms=duration_ms,
                     errors=output_errors,
                 )
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "stage_end",
+                    "Stage finished",
+                    stage=name,
+                    status="failed",
+                    duration_ms=duration_ms,
+                )
                 failed = True
                 exit_code = max(exit_code, EXIT_VALIDATION_ERROR)
                 if options.continue_on_error or not options.fail_fast:
@@ -409,6 +490,15 @@ def run_pipeline(
                 duration_ms=duration_ms,
                 outputs=list(stage.outputs),
             )
+            log_event(
+                logger,
+                logging.INFO,
+                "stage_end",
+                "Stage finished",
+                stage=name,
+                status="success",
+                duration_ms=duration_ms,
+            )
 
         if failed and exit_code == EXIT_OK:
             exit_code = EXIT_STAGE_ERROR
@@ -420,6 +510,7 @@ def run_pipeline(
             "Pipeline completed",
             failed=failed,
             exit_code=exit_code,
+            status="success_with_warnings" if run_degraded and not failed else ("failed" if failed else "success"),
         )
         return exit_code
     finally:
