@@ -40,6 +40,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     run_parser.add_argument("--continue-on-error", action="store_true", default=False)
     run_parser.add_argument("--artifact-validation", choices=["strict", "lenient"])
 
+    cleanup_parser = subparsers.add_parser("cleanup", help="Remove old run artifacts")
+    cleanup_parser.add_argument("--output", required=True, help="Output directory")
+    cleanup_parser.add_argument("--keep-days", type=int, default=7, help="Days to keep artifacts")
+    cleanup_parser.add_argument("--keep-last", type=int, default=20, help="Always keep last N runs")
+    cleanup_parser.add_argument("--dry-run", action="store_true", help="Preview removals only")
+    cleanup_parser.add_argument("--verbose", action="store_true", help="Print kept artifacts")
+
     return parser.parse_args(argv)
 
 
@@ -71,6 +78,20 @@ def _parse_stage_list(value: str | None) -> list[str] | None:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
+    if args.command == "cleanup":
+        from scanner.cleanup import cleanup_output
+
+        try:
+            return cleanup_output(
+                Path(args.output),
+                keep_days=args.keep_days,
+                keep_last=args.keep_last,
+                dry_run=args.dry_run,
+                verbose=args.verbose,
+            )
+        except ValueError as exc:
+            print(str(exc))
+            return 2
     if args.command != "run":
         raise ValueError(f"Unsupported command: {args.command}")
 
