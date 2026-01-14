@@ -5,3 +5,8 @@ runtime:
   timezone: "UTC"
 obs:
   log_jsonl: true
+
+universe:
+  quote_asset: "USDT"
+  min_quote_volume_24h: 0
+  min_trades_24h: 0
