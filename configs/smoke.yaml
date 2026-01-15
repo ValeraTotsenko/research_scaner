@@ -1,0 +1,82 @@
+mexc:
+  base_url: https://api.mexc.com
+  timeout_s: 10
+  max_retries: 3
+  backoff_base_s: 0.5
+  backoff_max_s: 4
+  max_rps: 1.0
+
+runtime:
+  run_name: "smoke"
+  timezone: "UTC"
+
+obs:
+  log_jsonl: true
+
+universe:
+  quote_asset: "USDT"
+  allowed_exchange_status: ["1"]
+  min_quote_volume_24h: 100000
+  min_trades_24h: 100
+  use_quote_volume_estimate: true
+  require_trade_count: false
+  blacklist_regex: []
+  whitelist: []
+
+sampling:
+  spread:
+    duration_s: 120
+    interval_s: 5
+    min_uptime: 0.9
+    allow_per_symbol: false
+    per_symbol_limit: 40
+
+  depth:
+    duration_s: 120
+    interval_s: 30
+    limit: 50
+    candidates_limit: 80
+
+  raw:
+    enabled: true
+    gzip: true
+
+thresholds:
+  spread:
+    median_max_bps: 15.0
+    p90_max_bps: 45.0
+  depth:
+    best_level_min_notional: 200.0
+    unwind_slippage_max_bps: 35.0
+  uptime_min: 0.9
+
+fees:
+  taker_bps: 4.0
+  maker_bps: 2.0
+
+depth:
+  top_n_levels: 10
+  band_bps: [5, 10]
+  stress_notional_usdt: 100.0
+
+report:
+  top_n: 20
+  include_raw_in_bundle: false
+
+pipeline:
+  resume: false
+  fail_fast: true
+  continue_on_error: false
+  artifact_validation: "strict"
+  total_timeout_s: 600
+
+  stage_timeouts_s:
+    universe: 60
+    spread: 180
+    score: 60
+    depth: 180
+    report: 60
+
+  timeout_behavior: "partial_success"
+  timeout_grace_s: 2
+  safety_margin_s: 5
