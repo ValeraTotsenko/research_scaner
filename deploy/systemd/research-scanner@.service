@@ -1,0 +1,29 @@
+[Unit]
+Description=Research Scanner instance (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scanner
+Group=scanner
+WorkingDirectory=/opt/research_scanner
+EnvironmentFile=/etc/research_scanner/research-scanner.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/research_scanner/scripts/run_service.sh %i
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=60
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/research_scanner /etc/research_scanner
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
