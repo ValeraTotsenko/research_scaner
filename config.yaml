@@ -1,13 +1,13 @@
 mexc:
   base_url: https://api.mexc.com
   timeout_s: 10
-  max_retries: 3
+  max_retries: 5
   backoff_base_s: 0.5
-  backoff_max_s: 4
-  max_rps: 1.2
+  backoff_max_s: 8
+  max_rps: 1.2   # чтобы меньше ловить 429 при depth :contentReference[oaicite:1]{index=1}
 
 runtime:
-  run_name: "smoke_raw"
+  run_name: "strict_depth"
   timezone: "UTC"
 
 obs:
@@ -16,8 +16,8 @@ obs:
 universe:
   quote_asset: "USDT"
   allowed_exchange_status: ["1"]
-  min_quote_volume_24h: 0
-  min_trades_24h: 0
+  min_quote_volume_24h: 500000
+  min_trades_24h: 500
   use_quote_volume_estimate: true
   require_trade_count: false
   blacklist_regex: []
@@ -25,28 +25,30 @@ universe:
 
 sampling:
   spread:
-    duration_s: 120
+    duration_s: 600
     interval_s: 2
-    min_uptime: 0.6
+    min_uptime: 0.95
     allow_per_symbol: false
-    per_symbol_limit: 50
+    per_symbol_limit: 80
+
   depth:
-    duration_s: 180
+    duration_s: 600
     interval_s: 30
-    limit: 50
-    candidates_limit: 200
+    limit: 100
+    candidates_limit: 200   # ключевое: не больше 200 кандидатов в depth
+
   raw:
     enabled: true
     gzip: true
 
 thresholds:
   spread:
-    median_max_bps: 250.0
-    p90_max_bps: 600.0
+    median_max_bps: 12.0
+    p90_max_bps: 35.0
   depth:
-    best_level_min_notional: 5.0
-    unwind_slippage_max_bps: 400.0
-  uptime_min: 0.6
+    best_level_min_notional: 500.0
+    unwind_slippage_max_bps: 25.0
+  uptime_min: 0.95
 
 fees:
   taker_bps: 4.0
@@ -54,27 +56,27 @@ fees:
 
 depth:
   top_n_levels: 10
-  band_bps: [5, 10, 20]
-  stress_notional_usdt: 25.0
+  band_bps: [5, 10]
+  stress_notional_usdt: 200.0
 
 report:
-  top_n: 20
+  top_n: 30
   include_raw_in_bundle: false
 
 pipeline:
   resume: false
   fail_fast: true
   continue_on_error: false
-  artifact_validation: "lenient"
-
+  artifact_validation: "strict"
   total_timeout_s: 0
-  stage_timeouts_s:
-    universe: 120
-    spread: 240
-    score: 120
-    depth: 360
-    report: 120
 
-  timeout_behavior: "fail"
+  stage_timeouts_s:
+    universe: 180
+    spread: 900
+    score: 180
+    depth: 900
+    report: 180
+
+  timeout_behavior: "partial_success"  # если поддерживается (лучше для ресёрча)
   timeout_grace_s: 2
   safety_margin_s: 5
