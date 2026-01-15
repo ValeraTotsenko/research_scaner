@@ -34,6 +34,7 @@ sampling:
     duration_s: 180
     interval_s: 30
     limit: 50
+    candidates_limit: 200
   raw:
     enabled: true
     gzip: true
