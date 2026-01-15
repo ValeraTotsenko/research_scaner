@@ -7,10 +7,11 @@ Wants=network-online.target
 Type=simple
 User=scanner
 Group=scanner
-WorkingDirectory=/opt/research_scanner
+Environment=RESEARCH_SCANNER_HOME=/opt/research_scanner
 EnvironmentFile=/etc/research_scanner/research-scanner.env
+WorkingDirectory=${RESEARCH_SCANNER_HOME}
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/research_scanner/scripts/run_service.sh %i
+ExecStart=${RESEARCH_SCANNER_HOME}/scripts/run_service.sh %i
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGINT
