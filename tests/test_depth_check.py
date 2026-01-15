@@ -4,7 +4,9 @@ import pytest
 
 from scanner.config import AppConfig
 from scanner.mexc.errors import RateLimitedError
-from scanner.pipeline.depth_check import run_depth_check
+from scanner.pipeline.depth_check import _select_candidates, run_depth_check
+from scanner.analytics.scoring import ScoreResult
+from scanner.analytics.spread_stats import SpreadStats
 
 
 class FakeDepthClient:
@@ -66,3 +68,58 @@ def test_rate_limit_degrades(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
 
     assert result.depth_fail_total == 1
     assert result.ticks_success == 1
+
+
+def _score_result(symbol: str, score: float, pass_spread: bool) -> ScoreResult:
+    stats = SpreadStats(
+        symbol=symbol,
+        sample_count=3,
+        valid_samples=3,
+        invalid_quotes=0,
+        spread_median_bps=1.0,
+        spread_p10_bps=0.5,
+        spread_p25_bps=0.75,
+        spread_p90_bps=1.5,
+        uptime=1.0,
+        insufficient_samples=False,
+    )
+    return ScoreResult(
+        symbol=symbol,
+        spread_stats=stats,
+        net_edge_bps=0.0,
+        pass_spread=pass_spread,
+        score=score,
+        fail_reasons=tuple(),
+    )
+
+
+def test_select_candidates_limits_pass_spread() -> None:
+    candidates = [_score_result(f"S{i:04d}", float(i), True) for i in range(1000)] + [
+        _score_result("A0999", 999.0, True),
+        _score_result("Z0999", 999.0, True),
+    ]
+
+    selected, pass_spread_total = _select_candidates(candidates, limit=200)
+
+    assert pass_spread_total == 1002
+    assert len(selected) == 200
+    assert selected[0] == "A0999"
+
+
+def test_select_candidates_fallback_to_score() -> None:
+    candidates = [_score_result(f"S{i:03d}", float(i), False) for i in range(300)]
+
+    selected, pass_spread_total = _select_candidates(candidates, limit=50)
+
+    assert pass_spread_total == 0
+    assert len(selected) == 50
+    assert selected[0] == "S299"
+
+
+def test_select_candidates_limits_strings() -> None:
+    candidates = [f"S{i:02d}" for i in range(20)]
+
+    selected, pass_spread_total = _select_candidates(candidates, limit=10)
+
+    assert pass_spread_total == 0
+    assert selected == candidates[:10]

@@ -66,6 +66,7 @@ class DepthSamplingConfig(BaseModel):
     duration_s: int = Field(default=1200)
     interval_s: float = Field(default=30)
     limit: int = Field(default=100)
+    candidates_limit: int = Field(default=200, gt=0)
 
 
 class RawSamplingConfig(BaseModel):

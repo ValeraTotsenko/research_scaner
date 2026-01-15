@@ -27,22 +27,31 @@ class _DepthSymbolState:
     symbol_unavailable_count: int = 0
 
 
-def _select_candidates(candidates: Sequence[object], limit: int) -> list[str]:
+def _select_candidates(candidates: Sequence[object], limit: int) -> tuple[list[str], int]:
     if not candidates:
-        return []
+        return [], 0
     if all(isinstance(item, str) for item in candidates):
-        return list(candidates)
+        selected = list(candidates)
+        if limit > 0:
+            selected = selected[:limit]
+        return selected, 0
 
     score_items: list[ScoreResult] = [item for item in candidates if isinstance(item, ScoreResult)]
     if not score_items:
         raise ValueError("Candidates must be strings or ScoreResult entries")
 
     pass_spread = [item for item in score_items if item.pass_spread]
+    pass_spread_total = len(pass_spread)
     if pass_spread:
-        return [item.symbol for item in pass_spread]
+        sorted_pass_spread = sorted(pass_spread, key=lambda item: (-item.score, item.symbol))
+        if limit > 0:
+            sorted_pass_spread = sorted_pass_spread[:limit]
+        return [item.symbol for item in sorted_pass_spread], pass_spread_total
 
     sorted_items = sorted(score_items, key=lambda item: (-item.score, item.symbol))
-    return [item.symbol for item in sorted_items[:limit]]
+    if limit > 0:
+        sorted_items = sorted_items[:limit]
+    return [item.symbol for item in sorted_items], pass_spread_total
 
 
 def _classify_snapshot_error(exc: ValueError) -> str:
@@ -76,7 +85,19 @@ def run_depth_check(
     if depth_cfg.top_n_levels <= 0:
         raise ValueError("top_n_levels must be positive")
 
-    symbols = _select_candidates(candidates, limit=50)
+    symbols, pass_spread_total = _select_candidates(candidates, limit=depth_sampling.candidates_limit)
+    log_event(
+        logger,
+        logging.INFO,
+        "depth_candidates_selected",
+        "Depth candidates selected",
+        candidates_total=len(candidates),
+        pass_spread_total=pass_spread_total,
+        selected=len(symbols),
+        selected_for_depth=len(symbols),
+        limit=depth_sampling.candidates_limit,
+        strategy="score_desc",
+    )
     if not symbols:
         raise ValueError("No depth candidates provided")
 
