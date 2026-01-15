@@ -61,3 +61,33 @@ def test_export_depth_outputs(tmp_path: Path) -> None:
     summary_path = export_summary_enriched(tmp_path, [_score("BTCUSDT")], results, band_bps=[5])
     content = summary_path.read_text(encoding="utf-8")
     assert "pass_total" in content
+
+
+def test_export_summary_enriched_handles_missing_depth(tmp_path: Path) -> None:
+    summary_path = export_summary_enriched(tmp_path, [_score("BTCUSDT")], [], band_bps=[5])
+    content = summary_path.read_text(encoding="utf-8")
+    assert "no_depth_data" in content
+
+
+def test_export_summary_enriched_handles_missing_band_metrics(tmp_path: Path) -> None:
+    results = [
+        DepthSymbolMetrics(
+            symbol="BTCUSDT",
+            sample_count=1,
+            valid_samples=1,
+            empty_book_count=0,
+            invalid_book_count=0,
+            symbol_unavailable_count=0,
+            best_bid_notional_median=None,
+            best_ask_notional_median=None,
+            topn_bid_notional_median=None,
+            topn_ask_notional_median=None,
+            band_bid_notional_median=None,
+            unwind_slippage_p90_bps=None,
+            uptime=0.0,
+            pass_depth=False,
+            fail_reasons=("no_valid_samples",),
+        )
+    ]
+    summary_path = export_summary_enriched(tmp_path, [_score("BTCUSDT")], results, band_bps=[5])
+    assert summary_path.exists()
