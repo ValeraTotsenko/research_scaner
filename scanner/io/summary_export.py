@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 from scanner.analytics.scoring import ScoreResult
+from scanner.obs.logging import log_event
 
 
 @dataclass(frozen=True)
@@ -55,22 +57,66 @@ def _row_payload(result: ScoreResult) -> dict[str, object]:
     }
 
 
-def export_summary(output_dir: Path, results: Iterable[ScoreResult]) -> SummaryExportPaths:
+def export_summary(
+    output_dir: Path,
+    results: Iterable[ScoreResult],
+    *,
+    logger: logging.Logger | None = None,
+    progress_every: int = 200,
+) -> SummaryExportPaths:
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    log = logger or logging.getLogger(__name__)
     results_list = sorted(list(results), key=lambda item: (-item.score, item.symbol))
     csv_path = output_dir / "summary.csv"
     json_path = output_dir / "summary.json"
 
-    with csv_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=SUMMARY_COLUMNS)
-        writer.writeheader()
-        for result in results_list:
-            payload = _row_payload(result)
-            payload["fail_reasons"] = ";".join(result.fail_reasons)
-            writer.writerow({key: _format_optional(payload[key]) for key in SUMMARY_COLUMNS})
+    current_symbol: str | None = None
+    row_idx: int | None = None
+    try:
+        with csv_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=SUMMARY_COLUMNS)
+            writer.writeheader()
+            for row_idx, result in enumerate(results_list, start=1):
+                current_symbol = result.symbol
+                payload = _row_payload(result)
+                payload["fail_reasons"] = ";".join(result.fail_reasons)
+                writer.writerow({key: _format_optional(payload[key]) for key in SUMMARY_COLUMNS})
+                if progress_every > 0 and row_idx % progress_every == 0:
+                    log_event(
+                        log,
+                        logging.INFO,
+                        "export_progress",
+                        "Summary export progress",
+                        file=csv_path.name,
+                        row_idx=row_idx,
+                        symbol=current_symbol,
+                    )
+    except Exception as exc:  # noqa: BLE001
+        log_event(
+            log,
+            logging.ERROR,
+            "export_failed",
+            "Summary export failed",
+            file=csv_path.name,
+            row_idx=row_idx,
+            symbol=current_symbol,
+            exc_info=exc,
+        )
+        raise
 
-    json_payload = [_row_payload(result) for result in results_list]
-    json_path.write_text(json.dumps(json_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        json_payload = [_row_payload(result) for result in results_list]
+        json_path.write_text(json.dumps(json_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        log_event(
+            log,
+            logging.ERROR,
+            "export_failed",
+            "Summary JSON export failed",
+            file=json_path.name,
+            exc_info=exc,
+        )
+        raise
 
     return SummaryExportPaths(csv_path=csv_path, json_path=json_path)

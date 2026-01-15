@@ -8,6 +8,7 @@ from typing import Iterable, Sequence
 
 from scanner.analytics.scoring import ScoreResult
 from scanner.models.depth import DepthSymbolMetrics
+from scanner.obs.logging import log_event
 
 
 @dataclass(frozen=True)
@@ -25,10 +26,13 @@ def export_depth_metrics(
     results: Iterable[DepthSymbolMetrics],
     *,
     band_bps: Sequence[int],
+    logger: logging.Logger | None = None,
+    progress_every: int = 200,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / "depth_metrics.csv"
 
+    log = logger or logging.getLogger(__name__)
     columns = [
         "symbol",
         "sample_count",
@@ -47,30 +51,56 @@ def export_depth_metrics(
     ]
     columns = columns[:10] + _band_columns(band_bps) + columns[10:]
 
-    with csv_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns)
-        writer.writeheader()
-        for result in sorted(results, key=lambda item: item.symbol):
-            band_payload = result.band_bid_notional_median or {}
-            row = {
-                "symbol": result.symbol,
-                "sample_count": result.sample_count,
-                "valid_samples": result.valid_samples,
-                "empty_book_count": result.empty_book_count,
-                "invalid_book_count": result.invalid_book_count,
-                "symbol_unavailable_count": result.symbol_unavailable_count,
-                "best_bid_notional_median": result.best_bid_notional_median or "",
-                "best_ask_notional_median": result.best_ask_notional_median or "",
-                "topn_bid_notional_median": result.topn_bid_notional_median or "",
-                "topn_ask_notional_median": result.topn_ask_notional_median or "",
-                "unwind_slippage_p90_bps": result.unwind_slippage_p90_bps or "",
-                "uptime": result.uptime,
-                "pass_depth": result.pass_depth,
-                "fail_reasons": ";".join(result.fail_reasons),
-            }
-            for band in band_bps:
-                row[f"band_bid_notional_median_{band}bps"] = band_payload.get(band, "")
-            writer.writerow(row)
+    current_symbol: str | None = None
+    row_idx: int | None = None
+    try:
+        with csv_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            for row_idx, result in enumerate(sorted(results, key=lambda item: item.symbol), start=1):
+                current_symbol = result.symbol
+                band_payload = result.band_bid_notional_median or {}
+                row = {
+                    "symbol": result.symbol,
+                    "sample_count": result.sample_count,
+                    "valid_samples": result.valid_samples,
+                    "empty_book_count": result.empty_book_count,
+                    "invalid_book_count": result.invalid_book_count,
+                    "symbol_unavailable_count": result.symbol_unavailable_count,
+                    "best_bid_notional_median": result.best_bid_notional_median or "",
+                    "best_ask_notional_median": result.best_ask_notional_median or "",
+                    "topn_bid_notional_median": result.topn_bid_notional_median or "",
+                    "topn_ask_notional_median": result.topn_ask_notional_median or "",
+                    "unwind_slippage_p90_bps": result.unwind_slippage_p90_bps or "",
+                    "uptime": result.uptime,
+                    "pass_depth": result.pass_depth,
+                    "fail_reasons": ";".join(result.fail_reasons),
+                }
+                for band in band_bps:
+                    row[f"band_bid_notional_median_{band}bps"] = band_payload.get(band, "")
+                writer.writerow(row)
+                if progress_every > 0 and row_idx % progress_every == 0:
+                    log_event(
+                        log,
+                        logging.INFO,
+                        "export_progress",
+                        "Depth metrics export progress",
+                        file=csv_path.name,
+                        row_idx=row_idx,
+                        symbol=current_symbol,
+                    )
+    except Exception as exc:  # noqa: BLE001
+        log_event(
+            log,
+            logging.ERROR,
+            "export_failed",
+            "Depth metrics export failed",
+            file=csv_path.name,
+            row_idx=row_idx,
+            symbol=current_symbol,
+            exc_info=exc,
+        )
+        raise
 
     return csv_path
 
@@ -81,6 +111,8 @@ def export_summary_enriched(
     depth_results: Sequence[DepthSymbolMetrics],
     *,
     band_bps: Sequence[int],
+    logger: logging.Logger | None = None,
+    progress_every: int = 200,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / "summary_enriched.csv"
@@ -101,14 +133,18 @@ def export_summary_enriched(
         "depth_fail_reasons",
     ]
 
-    logger = logging.getLogger(__name__)
+    log = logger or logging.getLogger(__name__)
     current_symbol: str | None = None
+    row_idx: int | None = None
 
     try:
         with csv_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=columns)
             writer.writeheader()
-            for result in sorted(summary_results, key=lambda item: (-item.score, item.symbol)):
+            for row_idx, result in enumerate(
+                sorted(summary_results, key=lambda item: (-item.score, item.symbol)),
+                start=1,
+            ):
                 current_symbol = result.symbol
                 depth = depth_by_symbol.get(result.symbol)
                 pass_depth = depth.pass_depth if depth else False
@@ -130,18 +166,26 @@ def export_summary_enriched(
                 for band in band_bps:
                     row[f"band_bid_notional_median_{band}bps"] = band_payload.get(band, "")
                 writer.writerow(row)
-    except Exception:
-        logger.error(
+                if progress_every > 0 and row_idx % progress_every == 0:
+                    log_event(
+                        log,
+                        logging.INFO,
+                        "export_progress",
+                        "Summary enriched export progress",
+                        file=csv_path.name,
+                        row_idx=row_idx,
+                        symbol=current_symbol,
+                    )
+    except Exception as exc:  # noqa: BLE001
+        log_event(
+            log,
+            logging.ERROR,
+            "export_failed",
             "Summary enriched export failed",
-            exc_info=True,
-            extra={
-                "event": "export_failed",
-                "extra": {
-                    "stage": "depth",
-                    "file": csv_path.name,
-                    "symbol": current_symbol,
-                },
-            },
+            file=csv_path.name,
+            row_idx=row_idx,
+            symbol=current_symbol,
+            exc_info=exc,
         )
         raise
 

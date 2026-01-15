@@ -139,7 +139,7 @@ def run_pipeline(
         try:
             state = load_pipeline_state(state_path, expected_spec=PIPELINE_SPEC_VERSION)
         except SpecVersionMismatchError as exc:
-            log_event(logger, logging.ERROR, "state_incompatible", str(exc))
+            log_event(logger, logging.ERROR, "state_incompatible", str(exc), exc_info=exc)
             return EXIT_VALIDATION_ERROR
     else:
         state = create_pipeline_state(
@@ -354,6 +354,7 @@ def run_pipeline(
                     duration_ms=duration_ms,
                     error_type=type(exc).__name__,
                     error=str(exc),
+                    exc_info=exc,
                 )
                 log_event(
                     logger,
