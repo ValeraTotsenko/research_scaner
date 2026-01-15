@@ -23,6 +23,13 @@ install -d -m 0750 -o scanner -g scanner /var/lib/research_scanner
 install -d -m 0750 -o scanner -g scanner "$output_root"
 install -d -m 0750 -o scanner -g scanner /etc/research_scanner
 install -d -m 0750 -o scanner -g scanner "$config_root"
+install -d -m 0755 "$scanner_home"
+
+rsync -a --delete \
+  --exclude '.git' \
+  --exclude '.venv' \
+  "${repo_root}/" "${scanner_home}/"
+chown -R scanner:scanner "$scanner_home"
 
 install -m 0644 "$unit_src" /etc/systemd/system/research-scanner@.service
 
