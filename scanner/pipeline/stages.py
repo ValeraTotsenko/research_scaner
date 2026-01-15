@@ -357,7 +357,7 @@ def _run_score(ctx: StageContext) -> dict[str, object]:
         )
         results.append(score_symbol(stats, ctx.config))
 
-    export_summary(ctx.run_dir, results)
+    export_summary(ctx.run_dir, results, logger=ctx.logger)
     log_scoring_done(ctx.logger, results)
     metrics = collect_scoring_metrics(results)
     metrics["symbols_scored"] = len(results)

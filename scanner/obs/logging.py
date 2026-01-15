@@ -61,5 +61,13 @@ def build_logger(settings: LogSettings) -> logging.Logger:
     return logger
 
 
-def log_event(logger: logging.Logger, level: int, event: str, message: str, **extra: Any) -> None:
-    logger.log(level, message, extra={"event": event, "extra": extra})
+def log_event(
+    logger: logging.Logger,
+    level: int,
+    event: str,
+    message: str,
+    *,
+    exc_info: logging._ExcInfoType | None = None,
+    **extra: Any,
+) -> None:
+    logger.log(level, message, extra={"event": event, "extra": extra}, exc_info=exc_info)

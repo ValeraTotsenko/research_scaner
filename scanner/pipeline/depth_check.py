@@ -293,9 +293,15 @@ def run_depth_check(
         pass_depth_count=pass_depth_count,
     )
 
-    export_depth_metrics(out_dir, results, band_bps=depth_cfg.band_bps)
+    export_depth_metrics(out_dir, results, band_bps=depth_cfg.band_bps, logger=logger)
     if candidates and all(isinstance(item, ScoreResult) for item in candidates):
-        export_summary_enriched(out_dir, candidates, results, band_bps=depth_cfg.band_bps)
+        export_summary_enriched(
+            out_dir,
+            candidates,
+            results,
+            band_bps=depth_cfg.band_bps,
+            logger=logger,
+        )
 
     return DepthCheckResult(
         target_ticks=target_ticks,
