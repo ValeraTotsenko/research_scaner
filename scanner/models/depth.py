@@ -15,7 +15,7 @@ class DepthSymbolMetrics:
     best_ask_notional_median: float | None
     topn_bid_notional_median: float | None
     topn_ask_notional_median: float | None
-    band_bid_notional_median: dict[int, float] | None
+    band_bid_notional_median: dict[int, float]
     unwind_slippage_p90_bps: float | None
     uptime: float
     pass_depth: bool

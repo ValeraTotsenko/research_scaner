@@ -146,7 +146,7 @@ def aggregate_depth_metrics(
             "best_ask_notional_median": None,
             "topn_bid_notional_median": None,
             "topn_ask_notional_median": None,
-            "band_bid_notional_median": None,
+            "band_bid_notional_median": {},
             "unwind_slippage_p90_bps": None,
         }
 
