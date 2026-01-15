@@ -12,6 +12,8 @@ sudo scripts/install_service.sh
 
 This script creates the `scanner` system user, installs the unit file, copies example configs
 into `/etc/research_scanner/configs`, and sets up `/var/lib/research_scanner/output`.
+If your install lives outside `/opt/research_scanner`, set `RESEARCH_SCANNER_HOME` in
+`/etc/research_scanner/research-scanner.env` so the unit can find `scripts/run_service.sh`.
 
 ## Start an instance
 
