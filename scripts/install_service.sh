@@ -14,6 +14,7 @@ configs_src="${repo_root}/configs"
 scanner_home="/opt/research_scanner"
 config_root="/etc/research_scanner/configs"
 output_root="/var/lib/research_scanner/output"
+bootstrap_python="${RESEARCH_SCANNER_BOOTSTRAP_PYTHON:-python3}"
 
 if ! id -u scanner >/dev/null 2>&1; then
   useradd --system --home /var/lib/research_scanner --shell /usr/sbin/nologin scanner
@@ -30,6 +31,18 @@ rsync -a --delete \
   --exclude '.venv' \
   "${repo_root}/" "${scanner_home}/"
 chown -R scanner:scanner "$scanner_home"
+
+venv_path="${scanner_home}/.venv"
+if [[ ! -x "${venv_path}/bin/python" ]]; then
+  if ! command -v "$bootstrap_python" >/dev/null 2>&1; then
+    echo "[install_service] ERROR: ${bootstrap_python} not found to create venv." >&2
+    exit 2
+  fi
+  echo "[install_service] Creating venv at ${venv_path}"
+  runuser -u scanner -- "$bootstrap_python" -m venv "$venv_path"
+  runuser -u scanner -- "${venv_path}/bin/pip" install -U pip
+  runuser -u scanner -- "${venv_path}/bin/pip" install -e "$scanner_home"
+fi
 
 install -m 0644 "$unit_src" /etc/systemd/system/research-scanner@.service
 
