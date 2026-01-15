@@ -40,9 +40,10 @@ if [[ ! -x "${venv_path}/bin/python" ]]; then
   fi
   echo "[install_service] Creating venv at ${venv_path}"
   runuser -u scanner -- "$bootstrap_python" -m venv "$venv_path"
-  runuser -u scanner -- "${venv_path}/bin/pip" install -U pip
-  runuser -u scanner -- "${venv_path}/bin/pip" install -e "$scanner_home"
 fi
+
+runuser -u scanner -- "${venv_path}/bin/pip" install -U pip
+runuser -u scanner -- "${venv_path}/bin/pip" install -e "$scanner_home"
 
 install -m 0644 "$unit_src" /etc/systemd/system/research-scanner@.service
 

@@ -26,6 +26,24 @@ if [[ ! -x "$python_bin" ]]; then
   exit 4
 fi
 
+missing_modules=()
+for module in yaml pydantic httpx; do
+  if ! "$python_bin" - <<PY
+import importlib.util
+import sys
+sys.exit(0 if importlib.util.find_spec("${module}") else 1)
+PY
+  then
+    missing_modules+=("$module")
+  fi
+done
+
+if (( ${#missing_modules[@]} )); then
+  echo "[research-scanner] ERROR: missing Python modules in ${python_bin}: ${missing_modules[*]}" >&2
+  echo "[research-scanner] Hint: run scripts/install_service.sh to install dependencies." >&2
+  exit 6
+fi
+
 mkdir -p "$output_dir"
 
 if [[ ! -w "$output_dir" ]]; then
