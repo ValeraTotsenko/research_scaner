@@ -40,8 +40,12 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
         if "insufficient_samples" not in fail_reasons:
             fail_reasons.append("insufficient_samples")
     else:
+        if stats.spread_median_bps < cfg.thresholds.spread.median_min_bps:
+            fail_reasons.append("spread_median_low")
         if stats.spread_median_bps > cfg.thresholds.spread.median_max_bps:
             fail_reasons.append("spread_median_high")
+        if stats.spread_p90_bps < cfg.thresholds.spread.p90_min_bps:
+            fail_reasons.append("spread_p90_low")
         if stats.spread_p90_bps > cfg.thresholds.spread.p90_max_bps:
             fail_reasons.append("spread_p90_high")
 
@@ -63,7 +67,9 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
         and stats.uptime >= cfg.thresholds.uptime_min
         and stats.invalid_quotes == 0
         and not stats.insufficient_samples
+        and stats.spread_median_bps >= cfg.thresholds.spread.median_min_bps
         and stats.spread_median_bps <= cfg.thresholds.spread.median_max_bps
+        and stats.spread_p90_bps >= cfg.thresholds.spread.p90_min_bps
         and stats.spread_p90_bps <= cfg.thresholds.spread.p90_max_bps
     )
 

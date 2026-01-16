@@ -241,7 +241,13 @@ def _render_report(
         [
             f"- Spread sampling: duration_s={cfg.sampling.spread.duration_s}, interval_s={cfg.sampling.spread.interval_s}, min_uptime={cfg.sampling.spread.min_uptime}",
             f"- Depth sampling: duration_s={cfg.sampling.depth.duration_s}, interval_s={cfg.sampling.depth.interval_s}, limit={cfg.sampling.depth.limit}",
-            f"- Spread thresholds: median_max_bps={cfg.thresholds.spread.median_max_bps}, p90_max_bps={cfg.thresholds.spread.p90_max_bps}",
+            (
+                "- Spread thresholds: "
+                f"median_min_bps={cfg.thresholds.spread.median_min_bps}, "
+                f"median_max_bps={cfg.thresholds.spread.median_max_bps}, "
+                f"p90_min_bps={cfg.thresholds.spread.p90_min_bps}, "
+                f"p90_max_bps={cfg.thresholds.spread.p90_max_bps}"
+            ),
             f"- Depth thresholds: best_level_min_notional={cfg.thresholds.depth.best_level_min_notional}, unwind_slippage_max_bps={cfg.thresholds.depth.unwind_slippage_max_bps}",
             f"- Report shortlist size: top_n={cfg.report.top_n}",
         ]
