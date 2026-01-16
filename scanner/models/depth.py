@@ -18,6 +18,11 @@ class DepthSymbolMetrics:
     band_bid_notional_median: dict[int, float]
     unwind_slippage_p90_bps: float | None
     uptime: float
+    best_bid_notional_pass: bool
+    best_ask_notional_pass: bool
+    unwind_slippage_pass: bool
+    band_10bps_notional_pass: bool | None
+    topn_notional_pass: bool | None
     pass_depth: bool
     fail_reasons: tuple[str, ...]
 

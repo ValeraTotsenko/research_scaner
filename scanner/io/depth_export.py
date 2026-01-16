@@ -46,8 +46,13 @@ def export_depth_metrics(
         "topn_ask_notional_median",
         "unwind_slippage_p90_bps",
         "uptime",
+        "best_bid_notional_pass",
+        "best_ask_notional_pass",
+        "unwind_slippage_pass",
+        "band_10bps_notional_pass",
+        "topn_notional_pass",
         "pass_depth",
-        "fail_reasons",
+        "depth_fail_reasons",
     ]
     columns = columns[:10] + _band_columns(band_bps) + columns[10:]
 
@@ -73,8 +78,15 @@ def export_depth_metrics(
                     "topn_ask_notional_median": result.topn_ask_notional_median or "",
                     "unwind_slippage_p90_bps": result.unwind_slippage_p90_bps or "",
                     "uptime": result.uptime,
+                    "best_bid_notional_pass": result.best_bid_notional_pass,
+                    "best_ask_notional_pass": result.best_ask_notional_pass,
+                    "unwind_slippage_pass": result.unwind_slippage_pass,
+                    "band_10bps_notional_pass": (
+                        "" if result.band_10bps_notional_pass is None else result.band_10bps_notional_pass
+                    ),
+                    "topn_notional_pass": "" if result.topn_notional_pass is None else result.topn_notional_pass,
                     "pass_depth": result.pass_depth,
-                    "fail_reasons": ";".join(result.fail_reasons),
+                    "depth_fail_reasons": ";".join(result.fail_reasons),
                 }
                 for band in band_bps:
                     row[f"band_bid_notional_median_{band}bps"] = band_payload.get(band, "")
@@ -124,6 +136,11 @@ def export_summary_enriched(
         "score",
         "pass_spread",
         "pass_depth",
+        "best_bid_notional_pass",
+        "best_ask_notional_pass",
+        "unwind_slippage_pass",
+        "band_10bps_notional_pass",
+        "topn_notional_pass",
         "pass_total",
         "best_bid_notional_median",
         "best_ask_notional_median",
@@ -160,6 +177,13 @@ def export_summary_enriched(
                     "score": result.score,
                     "pass_spread": result.pass_spread,
                     "pass_depth": pass_depth,
+                    "best_bid_notional_pass": depth.best_bid_notional_pass if depth else "",
+                    "best_ask_notional_pass": depth.best_ask_notional_pass if depth else "",
+                    "unwind_slippage_pass": depth.unwind_slippage_pass if depth else "",
+                    "band_10bps_notional_pass": (
+                        "" if depth is None or depth.band_10bps_notional_pass is None else depth.band_10bps_notional_pass
+                    ),
+                    "topn_notional_pass": "" if depth is None or depth.topn_notional_pass is None else depth.topn_notional_pass,
                     "pass_total": pass_total,
                     "best_bid_notional_median": depth.best_bid_notional_median if depth else "",
                     "best_ask_notional_median": depth.best_ask_notional_median if depth else "",

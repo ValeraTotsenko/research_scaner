@@ -12,7 +12,10 @@ def test_bundle_includes_expected_files(tmp_path: Path) -> None:
 
     (run_dir / "summary.csv").write_text("symbol,score\nAAA,1\n", encoding="utf-8")
     (run_dir / "summary.json").write_text("[]", encoding="utf-8")
-    (run_dir / "depth_metrics.csv").write_text("symbol,pass_depth,uptime,fail_reasons\n", encoding="utf-8")
+    (run_dir / "depth_metrics.csv").write_text(
+        "symbol,pass_depth,uptime,depth_fail_reasons\n",
+        encoding="utf-8",
+    )
     (run_dir / "summary_enriched.csv").write_text(
         "symbol,score,pass_spread,pass_depth,pass_total,depth_fail_reasons\n",
         encoding="utf-8",

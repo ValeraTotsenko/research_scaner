@@ -70,8 +70,13 @@ def validate_depth_metrics(path: Path, *, band_bps: Iterable[int], strict: bool)
         "topn_ask_notional_median",
         "unwind_slippage_p90_bps",
         "uptime",
+        "best_bid_notional_pass",
+        "best_ask_notional_pass",
+        "unwind_slippage_pass",
+        "band_10bps_notional_pass",
+        "topn_notional_pass",
         "pass_depth",
-        "fail_reasons",
+        "depth_fail_reasons",
     ]
     band_cols = [f"band_bid_notional_median_{band}bps" for band in band_bps]
     columns = required[:10] + band_cols + required[10:]
