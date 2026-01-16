@@ -3,7 +3,7 @@ import pytest
 
 from scanner.config import MexcConfig
 from scanner.mexc.client import MexcClient
-from scanner.mexc.errors import FatalHttpError, TransientHttpError
+from scanner.mexc.errors import FatalHttpError, TransientHttpError, WafLimitedError
 from scanner.mexc.ratelimit import TokenBucket
 
 
@@ -59,6 +59,24 @@ def test_server_error_retries_then_success() -> None:
 
     assert data == [{"symbol": "ETHUSDT"}]
     assert client.metrics.http_retries_total[("/api/v3/ticker/bookTicker", "server_error")] == 1
+
+
+def test_waf_limit_retries_then_fails() -> None:
+    responses = [
+        httpx.Response(403, json={"msg": "waf"}),
+        httpx.Response(403, json={"msg": "waf"}),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return responses.pop(0)
+
+    transport = httpx.MockTransport(handler)
+    client = build_client(transport, max_retries=1)
+
+    with pytest.raises(WafLimitedError):
+        client.get_exchange_info()
+
+    assert client.metrics.http_retries_total[("/api/v3/exchangeInfo", "waf_limited")] == 1
 
 
 def test_fatal_error_no_retry() -> None:

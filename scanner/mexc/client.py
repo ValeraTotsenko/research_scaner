@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 from scanner.config import MexcConfig
-from scanner.mexc.errors import FatalHttpError, RateLimitedError, TransientHttpError
+from scanner.mexc.errors import FatalHttpError, RateLimitedError, TransientHttpError, WafLimitedError
 from scanner.mexc.ratelimit import TokenBucket
 from scanner.obs.logging import log_event
 
@@ -126,13 +126,53 @@ class MexcClient:
                 )
 
                 if response.status_code == 429:
+                    log_event(
+                        self._logger,
+                        logging.WARNING,
+                        "api_rate_limited",
+                        "Rate limit response received; backing off",
+                        endpoint=endpoint,
+                        status=response.status_code,
+                        attempt=attempt,
+                        run_id=self._run_id,
+                    )
                     if attempt <= self._config.max_retries:
                         self._metrics.record_retry(endpoint, "rate_limited")
                         self._backoff_sleep(attempt)
                         continue
                     raise RateLimitedError("Rate limit exceeded", status_code=429, response_text=response.text)
 
+                if response.status_code == 403:
+                    log_event(
+                        self._logger,
+                        logging.WARNING,
+                        "api_waf_limited",
+                        "WAF limit response received; reduce request rate",
+                        endpoint=endpoint,
+                        status=response.status_code,
+                        attempt=attempt,
+                        run_id=self._run_id,
+                        recommendation="reduce_request_rate",
+                    )
+                    if attempt <= self._config.max_retries:
+                        self._metrics.record_retry(endpoint, "waf_limited")
+                        self._backoff_sleep(attempt)
+                        continue
+                    raise WafLimitedError(
+                        "WAF limit exceeded", status_code=403, response_text=response.text
+                    )
+
                 if response.status_code >= 500:
+                    log_event(
+                        self._logger,
+                        logging.WARNING,
+                        "api_server_error",
+                        "Server error response received; backing off",
+                        endpoint=endpoint,
+                        status=response.status_code,
+                        attempt=attempt,
+                        run_id=self._run_id,
+                    )
                     if attempt <= self._config.max_retries:
                         self._metrics.record_retry(endpoint, "server_error")
                         self._backoff_sleep(attempt)

@@ -22,6 +22,7 @@ def _write_run_meta(run_dir: Path) -> None:
         "git_commit": "deadbeef",
         "config": {"runtime": {"run_name": "demo"}},
         "status": "success",
+        "run_health": "ok",
         "scanner_version": __version__,
         "spec_version": PIPELINE_SPEC_VERSION,
     }
@@ -129,6 +130,7 @@ def test_generate_report_creates_outputs(tmp_path: Path) -> None:
     assert report_path.exists()
     report_text = report_path.read_text(encoding="utf-8")
     assert "## Run meta" in report_text
+    assert "## API health summary" in report_text
     assert "## Top candidates" in report_text
     assert shortlist_path.exists()
 

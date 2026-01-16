@@ -12,6 +12,7 @@ from scanner import __version__
 from scanner.config import ConfigError, load_config
 from scanner.io.layout import ensure_run_layout, write_run_meta
 from scanner.obs.logging import LogSettings, build_logger, log_event
+from scanner.obs.metrics import summarize_api_health, update_metrics
 from scanner.pipeline.runner import (
     EXIT_VALIDATION_ERROR,
     PipelineOptions,
@@ -160,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         git_commit=get_git_commit(),
         config=loaded.config.model_dump(mode="json"),
         status="running",
+        run_health="ok",
         scanner_version=__version__,
         spec_version=PIPELINE_SPEC_VERSION,
     )
@@ -195,6 +197,15 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     status = "success" if exit_code == 0 else "failed"
+    metrics_payload: dict[str, object] = {}
+    if layout.metrics_path.exists():
+        raw_metrics = layout.metrics_path.read_text(encoding="utf-8").strip()
+        if raw_metrics:
+            metrics_payload = json.loads(raw_metrics)
+    health_summary = summarize_api_health(metrics_payload)
+    run_health = str(health_summary.get("run_health", "ok"))
+    run_degraded = 0 if run_health == "ok" else 1
+    update_metrics(layout.metrics_path, gauges={"run_degraded": run_degraded})
     write_run_meta(
         layout.run_meta_path,
         run_id=run_id,
@@ -202,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         git_commit=get_git_commit(),
         config=loaded.config.model_dump(mode="json"),
         status=status,
+        run_health=run_health,
         scanner_version=__version__,
         spec_version=PIPELINE_SPEC_VERSION,
         error=None if exit_code == 0 else f"pipeline_exit_{exit_code}",
