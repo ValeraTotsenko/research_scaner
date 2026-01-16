@@ -94,7 +94,9 @@ class FeesConfig(BaseModel):
 class SpreadThresholdsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    median_min_bps: float = Field(default=0.0)
     median_max_bps: float = Field(default=25.0)
+    p90_min_bps: float = Field(default=0.0)
     p90_max_bps: float = Field(default=60.0)
 
 

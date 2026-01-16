@@ -21,7 +21,12 @@ def test_score_symbol_pass_spread() -> None:
     )
     cfg = AppConfig(
         thresholds=ThresholdsConfig(
-            spread=SpreadThresholdsConfig(median_max_bps=25.0, p90_max_bps=35.0),
+            spread=SpreadThresholdsConfig(
+                median_min_bps=8.0,
+                median_max_bps=25.0,
+                p90_min_bps=0.0,
+                p90_max_bps=35.0,
+            ),
             uptime_min=0.9,
         )
     )
@@ -50,7 +55,12 @@ def test_score_symbol_flags_fail_reasons() -> None:
     )
     cfg = AppConfig(
         thresholds=ThresholdsConfig(
-            spread=SpreadThresholdsConfig(median_max_bps=25.0, p90_max_bps=60.0),
+            spread=SpreadThresholdsConfig(
+                median_min_bps=8.0,
+                median_max_bps=25.0,
+                p90_min_bps=0.0,
+                p90_max_bps=60.0,
+            ),
             uptime_min=0.9,
         )
     )
@@ -63,3 +73,38 @@ def test_score_symbol_flags_fail_reasons() -> None:
     assert "spread_median_high" in result.fail_reasons
     assert "spread_p90_high" in result.fail_reasons
     assert "missing_24h_stats" in result.fail_reasons
+
+
+def test_score_symbol_rejects_low_spreads() -> None:
+    stats = SpreadStats(
+        symbol="SOLUSDT",
+        sample_count=5,
+        valid_samples=5,
+        invalid_quotes=0,
+        spread_median_bps=5.0,
+        spread_p10_bps=3.0,
+        spread_p25_bps=4.0,
+        spread_p90_bps=2.0,
+        uptime=0.95,
+        insufficient_samples=False,
+        quote_volume_24h=500_000.0,
+        trades_24h=300,
+        missing_24h_stats=False,
+    )
+    cfg = AppConfig(
+        thresholds=ThresholdsConfig(
+            spread=SpreadThresholdsConfig(
+                median_min_bps=8.0,
+                median_max_bps=25.0,
+                p90_min_bps=3.0,
+                p90_max_bps=60.0,
+            ),
+            uptime_min=0.9,
+        )
+    )
+
+    result = score_symbol(stats, cfg)
+
+    assert result.pass_spread is False
+    assert "spread_median_low" in result.fail_reasons
+    assert "spread_p90_low" in result.fail_reasons

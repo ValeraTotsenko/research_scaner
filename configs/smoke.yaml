@@ -43,7 +43,9 @@ sampling:
 
 thresholds:
   spread:
+    median_min_bps: 8.0
     median_max_bps: 15.0
+    p90_min_bps: 0.0
     p90_max_bps: 45.0
   depth:
     best_level_min_notional: 200.0
