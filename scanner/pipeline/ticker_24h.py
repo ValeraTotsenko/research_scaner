@@ -178,17 +178,17 @@ def build_ticker24h_stats(
                 quote_volume_effective = quote_volume_est
                 used_estimate = True
 
+        # AD-101: missing_24h_stats is True ONLY when data is truly missing/unparseable.
+        # API returning null for quoteVolume or count is a valid response, not "missing".
+        # The missing flag was already set for "no_row" and "parse_error" cases above.
+        # Here we only check if we have SOME usable volume data (raw or estimated).
         missing = False
         missing_reason = None
-        if row.quote_volume_raw is None and row.volume_raw is None:
-            missing = True
-            missing_reason = "no_any_fields"
-        elif row.quote_volume_raw is None and quote_volume_effective is None:
-            missing = True
-            missing_reason = "no_volume_and_no_mid"
-        if require_trade_count and row.trade_count is None:
-            missing = True
-            missing_reason = missing_reason or "missing_trade_count"
+        # Note: row.quote_volume_raw can be None (API returned null) which is valid.
+        # We do NOT set missing_24h_stats=True just because quote_volume_raw is None.
+        # The only scenario where we need to flag is if we genuinely cannot determine
+        # any volume at all AND we need it for filtering - but that's handled by
+        # the universe stage, not here.
 
         if logger and quote_volume_effective is not None:
             log_event(

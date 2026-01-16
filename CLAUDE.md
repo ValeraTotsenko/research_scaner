@@ -40,6 +40,36 @@
 - **Output:** CSV/JSON data artifacts, markdown reports, and portable ZIP bundles
 - **Observability:** Structured JSON Lines logging, HTTP metrics tracking, API health monitoring
 
+### Core Concept (from ТЗ)
+
+The scanner answers the fundamental question:
+
+> **"Сколько spot-пар (в заданном universe, например USDT) имеют устойчивый спред, достаточный для покрытия комиссий и допущений по исполнению (проскальзывание/частичные fill), и при этом имеют минимальную ликвидность, чтобы работать малыми объёмами без сильного влияния?"**
+
+In English: "How many spot pairs in a given universe (e.g., USDT quote asset) have a **sustainable spread** sufficient to cover fees and execution assumptions (slippage, partial fills), while having minimum liquidity to trade small volumes without significant market impact?"
+
+This research informs the decision: **should we launch an MVP spread-capture strategy on MEXC**, and which pairs to prioritize first?
+
+**Important Caveat:** This scanner measures **top-of-book spread** and its stability. It does NOT prove that we will "capture" this spread on real orders (queue position, partial fills, adverse selection affect execution). But it honestly answers: "Are there enough instruments where the spread won't collapse and volume isn't dead?"
+
+### Edge Economics (Maker/Maker Model)
+
+The base operating model assumes **maker fills on both sides** (buy + sell):
+
+```
+gross_capture_bps ≈ spread_median_bps
+fees_bps = 2 × maker_fee_bps  (maker on entry + maker on exit)
+edge_mm_bps = spread_median_bps - 2 × maker_fee_bps - slippage_buffer_bps
+```
+
+For emergency unwind scenarios (forced taker exit):
+
+```
+edge_with_unwind_bps = spread_median_bps - (maker_fee_bps + taker_fee_bps) - slippage_buffer_bps
+```
+
+The **primary metric** for pass/fail is `edge_mm_bps` (maker/maker edge).
+
 ### Business Context
 
 The tool is used by traders to:
@@ -161,6 +191,22 @@ universe → spread → score → depth → report
 | **score** | universe + spread raw | `summary.csv`, `summary.json` | Compute spread stats, edge metrics, pass/fail | 30-180s |
 | **depth** | `summary.csv` | `depth_metrics.csv`, `summary_enriched.csv` | Analyze order book, evaluate slippage | 600-2400s |
 | **report** | summary + meta | `report.md`, `shortlist.csv` | Generate human-readable report | 30-180s |
+
+#### Depth Stage: Uptime vs Pass/Fail
+
+**Important:** The depth stage operates in "effective snapshot mode" when `candidates_limit > interval_s × max_rps`. This is common with rate-limited APIs.
+
+- **Depth uptime** is calculated as `valid_samples / target_ticks` but is **informational only**
+- **PASS_DEPTH** criteria use only:
+  - `best_bid_notional_median >= best_level_min_notional`
+  - `best_ask_notional_median >= best_level_min_notional`
+  - `unwind_slippage_p90_bps <= unwind_slippage_max_bps`
+- Depth uptime is NOT a pass/fail criterion (unlike spread uptime)
+
+The system logs a warning if your config cannot achieve multiple samples per symbol. To increase depth sample count:
+1. Reduce `sampling.depth.candidates_limit`
+2. Increase `mexc.max_rps` (carefully, to avoid API bans)
+3. Increase `sampling.depth.duration_s`
 
 **Key Files:**
 - `/home/user/research_scaner/scanner/pipeline/runner.py:1` - Pipeline executor

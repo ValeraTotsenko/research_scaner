@@ -184,6 +184,7 @@ class AppConfig(BaseModel):
             stage_timeouts.setdefault(stage, timeout_s)
         self.pipeline.stage_timeouts_s = stage_timeouts
         _validate_spread_timeout(self)
+        _validate_depth_sampling_feasibility(self)
         return self
 
 
@@ -212,6 +213,38 @@ def _validate_spread_timeout(config: AppConfig) -> None:
         )
         if config.pipeline.spread_timeout_behavior == "error":
             raise ValueError(message)
+        logging.getLogger(__name__).warning(message)
+
+
+def _validate_depth_sampling_feasibility(config: AppConfig) -> None:
+    """Warn if depth sampling config cannot achieve multiple samples per symbol.
+
+    With rate limiting (max_rps), each depth tick takes candidates_limit/max_rps seconds.
+    If this exceeds interval_s, we operate in "effective snapshot mode" where each symbol
+    gets fewer samples than the naive duration/interval formula suggests.
+
+    This is informational - depth uptime is NOT a pass/fail criterion. Only best_level_notional
+    and unwind_slippage are checked for PASS_DEPTH.
+    """
+    depth_cfg = config.sampling.depth
+    max_rps = config.mexc.max_rps
+    if max_rps <= 0:
+        return
+
+    # Time to sample all candidates once
+    tick_duration_s = depth_cfg.candidates_limit / max_rps
+    interval_s = depth_cfg.interval_s
+
+    if tick_duration_s > interval_s:
+        expected_samples = max(1, int(depth_cfg.duration_s / tick_duration_s))
+        naive_samples = int(depth_cfg.duration_s / interval_s)
+        message = (
+            f"Depth sampling operates in effective snapshot mode: with {depth_cfg.candidates_limit} "
+            f"candidates at {max_rps} RPS, each tick takes ~{tick_duration_s:.0f}s (exceeds "
+            f"interval_s={interval_s}s). Expected ~{expected_samples} samples/symbol instead of "
+            f"naive {naive_samples}. Depth uptime metric is informational only (not a pass/fail "
+            f"criterion). To increase samples, reduce candidates_limit or increase max_rps."
+        )
         logging.getLogger(__name__).warning(message)
 
 

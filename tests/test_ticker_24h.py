@@ -18,7 +18,13 @@ def test_quote_volume_estimated_with_mid() -> None:
     assert stats.used_estimate is True
 
 
-def test_missing_when_no_volume_and_no_mid() -> None:
+def test_no_volume_data_but_not_missing() -> None:
+    """AD-101: API returning null for quoteVolume/volume is valid, not 'missing'.
+
+    missing_24h_stats is only True for 'no_row' or 'parse_error'.
+    If both quoteVolume and volume are null, we have no volume data but
+    the symbol exists with valid null values.
+    """
     ticker_payload = [{"symbol": "ETHUSDT", "quoteVolume": None, "volume": None}]
     book_payload: list[dict[str, str]] = []
 
@@ -30,7 +36,8 @@ def test_missing_when_no_volume_and_no_mid() -> None:
         require_trade_count=False,
     )["ETHUSDT"]
 
-    assert stats.missing_24h_stats is True
+    # AD-101: API returning null is valid, not "missing"
+    assert stats.missing_24h_stats is False
     assert stats.quote_volume_effective is None
 
 
@@ -65,7 +72,13 @@ def test_parse_error_marks_missing() -> None:
     assert stats.missing_24h_reason == "parse_error"
 
 
-def test_bad_mid_price_keeps_missing() -> None:
+def test_bad_mid_price_no_estimate_but_not_missing() -> None:
+    """AD-101: Even if we can't compute estimate, API data is valid (not 'missing').
+
+    missing_24h_stats is only True for 'no_row' or 'parse_error'.
+    If quoteVolume is null and mid_price is invalid (can't estimate),
+    the symbol still has valid null volume data.
+    """
     ticker_payload = [{"symbol": "ADAUSDT", "quoteVolume": None, "volume": "5"}]
     book_payload = [{"symbol": "ADAUSDT", "bidPrice": "0", "askPrice": "0"}]
 
@@ -77,5 +90,7 @@ def test_bad_mid_price_keeps_missing() -> None:
         require_trade_count=False,
     )["ADAUSDT"]
 
-    assert stats.missing_24h_stats is True
+    # AD-101: API data exists (not "missing"), just can't estimate
+    assert stats.missing_24h_stats is False
     assert stats.mid_price is None
+    assert stats.quote_volume_effective is None  # Can't estimate without valid mid

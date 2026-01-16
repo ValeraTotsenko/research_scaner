@@ -45,14 +45,33 @@ For the sorted spread series:
 
 - `insufficient_samples = valid_samples < 3`
 
-## Fees and net edge
+## Fees and edge metrics
 
-- `net_edge_bps = spread_median_bps - (fees.maker_bps + fees.taker_bps)`
+The system calculates two edge metrics:
 
-Defaults (conservative):
+1. **edge_mm_bps** (Maker/Maker mode - primary metric):
+   ```
+   edge_mm_bps = spread_median_bps - 2 × maker_bps - slippage_buffer_bps
+   ```
+   This assumes maker fills on both entry and exit (spread-capture strategy).
+
+2. **edge_with_unwind_bps** (Emergency unwind penalty):
+   ```
+   edge_with_unwind_bps = spread_median_bps - (maker_bps + taker_bps) - slippage_buffer_bps
+   ```
+   This represents worst-case forced taker exit.
+
+3. **net_edge_bps** (Primary reporting metric):
+   ```
+   net_edge_bps = edge_mm_bps
+   ```
+   The net edge uses the maker/maker model as this reflects normal operation.
+
+Defaults:
 
 - `fees.maker_bps = 2.0`
 - `fees.taker_bps = 4.0`
+- `thresholds.slippage_buffer_bps = 2.0`
 
 ## PASS/FAIL (PASS_SPREAD)
 
@@ -75,9 +94,12 @@ Defaults:
 - `insufficient_samples` — too few valid samples
 - `invalid_quotes` — zero/negative prices in samples
 - `low_uptime` — uptime below threshold
-- `spread_median_high` — median above threshold
-- `spread_p90_high` — p90 above threshold
-- `missing_24h_stats` — missing `quoteVolume_24h` or `trades_24h`
+- `spread_median_low` — median below min threshold
+- `spread_median_high` — median above max threshold
+- `spread_p90_low` — p90 below min threshold
+- `spread_p90_high` — p90 above max threshold
+- `missing_24h_stats` — symbol not found in ticker API response OR parse error (AD-101: API returning `null` for quoteVolume/count is valid, not "missing")
+- `no_volume_data` — volume data unavailable (API returned null for both quoteVolume and volume, and estimate couldn't be computed)
 
 ## Score
 
