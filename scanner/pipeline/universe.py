@@ -8,6 +8,7 @@ from typing import Iterable
 
 from scanner.config import UniverseConfig
 from scanner.models.universe import UniverseReject, UniverseResult, UniverseStats
+from scanner.obs.metrics import update_metrics
 from scanner.obs.logging import log_event
 from scanner.pipeline.ticker_24h import build_ticker24h_stats
 
@@ -33,42 +34,107 @@ def build_universe(
 ) -> UniverseResult:
     logger = logger or logging.getLogger(__name__)
 
+    try:
+        default_symbols = client.get_default_symbols()
+    except Exception:
+        if metrics_path:
+            update_metrics(metrics_path, increments={"defaultSymbols_fetch_fail_total": 1})
+        log_event(
+            logger,
+            logging.ERROR,
+            "default_symbols_fetch_failed",
+            "Failed to fetch defaultSymbols",
+            api_unstable=True,
+        )
+        raise
+
+    if not default_symbols:
+        if metrics_path:
+            update_metrics(metrics_path, increments={"defaultSymbols_fetch_fail_total": 1})
+        log_event(
+            logger,
+            logging.ERROR,
+            "default_symbols_empty",
+            "defaultSymbols empty or unavailable; cannot build universe",
+            api_unstable=True,
+        )
+        raise UniverseBuildError("defaultSymbols empty or unavailable; cannot build universe")
+
+    default_set = set(default_symbols)
+    if metrics_path:
+        update_metrics(metrics_path, gauges={"defaultSymbols_total": len(default_set)})
+
     exchange_info = client.get_exchange_info()
     symbols_payload = exchange_info.get("symbols", [])
-    candidates: list[str] = []
-    status_rejects: dict[str, str] = {}
+    exchange_map: dict[str, dict[str, object]] = {}
+    exchange_quote_asset: dict[str, str | None] = {}
+    exchange_status: dict[str, str | None] = {}
 
     for entry in symbols_payload:
         if not isinstance(entry, dict):
             continue
-        if entry.get("quoteAsset") != cfg.quote_asset:
-            continue
         symbol = entry.get("symbol")
         if not isinstance(symbol, str):
             continue
-        candidates.append(symbol)
+        exchange_map[symbol] = entry
+        quote_asset = entry.get("quoteAsset")
+        exchange_quote_asset[symbol] = str(quote_asset) if quote_asset is not None else None
         status = entry.get("status")
-        if status is not None:
-            status_value = str(status)
-            if status_value not in cfg.allowed_exchange_status:
-                status_rejects[symbol] = status_value
+        exchange_status[symbol] = str(status) if status is not None else None
 
-    default_symbols = client.get_default_symbols()
-    if not default_symbols:
-        raise UniverseBuildError("defaultSymbols empty or unavailable; cannot build universe")
-    default_set = set(default_symbols)
-
+    candidates = sorted(default_set | set(exchange_map.keys()))
     rejects: list[UniverseReject] = []
     tradable: list[str] = []
+    not_in_default_count = 0
+    source_flags: dict[str, dict[str, object]] = {}
+
     for symbol in candidates:
-        if symbol in status_rejects:
-            rejects.append(
-                UniverseReject(symbol=symbol, reason="exchange_status_not_allowed")
+        in_default = symbol in default_set
+        in_exchange = symbol in exchange_map
+        status_value = exchange_status.get(symbol)
+        quote_asset_value = exchange_quote_asset.get(symbol)
+        status_allowed = status_value in cfg.allowed_exchange_status if status_value is not None else None
+        quote_asset_allowed = (
+            quote_asset_value == cfg.quote_asset if quote_asset_value is not None else None
+        )
+
+        source_flags[symbol] = {
+            "in_defaultSymbols": in_default,
+            "in_exchangeInfo": in_exchange,
+            "status": status_value,
+            "quoteAsset": quote_asset_value,
+            "status_allowed": status_allowed,
+            "quote_asset_allowed": quote_asset_allowed,
+        }
+
+        if not in_default:
+            rejects.append(UniverseReject(symbol=symbol, reason="not_in_defaultSymbols"))
+            not_in_default_count += 1
+            continue
+        if not in_exchange:
+            rejects.append(UniverseReject(symbol=symbol, reason="metadata_missing"))
+            continue
+        if quote_asset_value != cfg.quote_asset:
+            rejects.append(UniverseReject(symbol=symbol, reason="quote_asset_not_allowed"))
+            continue
+        if status_value is None or status_value not in cfg.allowed_exchange_status:
+            log_event(
+                logger,
+                logging.WARNING,
+                "exchange_status_unexpected",
+                "Unexpected exchangeInfo status",
+                symbol=symbol,
+                status=status_value,
             )
-        elif symbol not in default_set:
-            rejects.append(UniverseReject(symbol=symbol, reason="not_in_default_symbols"))
-        else:
-            tradable.append(symbol)
+            rejects.append(UniverseReject(symbol=symbol, reason="status_not_allowed"))
+            continue
+        tradable.append(symbol)
+
+    if metrics_path:
+        update_metrics(
+            metrics_path,
+            increments={"universe_not_in_defaultSymbols_total": not_in_default_count},
+        )
 
     tickers = client.get_ticker_24hr()
     book_tickers = client.get_book_ticker()
@@ -119,11 +185,11 @@ def build_universe(
             continue
 
         if quote_volume < cfg.min_quote_volume_24h:
-            rejects.append(UniverseReject(symbol=symbol, reason="min_quote_volume_24h"))
+            rejects.append(UniverseReject(symbol=symbol, reason="low_volume"))
             continue
 
         if trade_count is not None and trade_count < cfg.min_trades_24h:
-            rejects.append(UniverseReject(symbol=symbol, reason="min_trades_24h"))
+            rejects.append(UniverseReject(symbol=symbol, reason="low_trades"))
             continue
 
         kept.append(symbol)
@@ -176,4 +242,4 @@ def build_universe(
         top_reject_reasons=top_rejects,
     )
 
-    return UniverseResult(symbols=kept, rejects=rejects, stats=stats)
+    return UniverseResult(symbols=kept, rejects=rejects, stats=stats, source_flags=source_flags)

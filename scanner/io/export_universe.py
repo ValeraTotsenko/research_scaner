@@ -27,6 +27,7 @@ def export_universe(output_dir: Path, result: UniverseResult) -> UniverseExportP
             "kept": result.stats.kept,
             "rejected": result.stats.rejected,
         },
+        "source_flags": result.source_flags,
     }
     universe_path.write_text(json.dumps(universe_payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
