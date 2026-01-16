@@ -261,9 +261,15 @@ def _render_report(
                 f"p90_max_bps={cfg.thresholds.spread.p90_max_bps}"
             ),
             (
+                "- Fees: "
+                f"maker_bps={cfg.fees.maker_bps}, "
+                f"taker_bps={cfg.fees.taker_bps}"
+            ),
+            (
                 "- Edge thresholds: "
                 f"edge_min_bps={cfg.thresholds.edge_min_bps}, "
-                f"slippage_buffer_bps={cfg.thresholds.slippage_buffer_bps}"
+                f"slippage_buffer_bps={cfg.thresholds.slippage_buffer_bps} "
+                f"(edge_mm = spread - 2*maker - buffer)"
             ),
             (
                 "- Depth thresholds: "

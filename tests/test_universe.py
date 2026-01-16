@@ -36,8 +36,8 @@ def test_quote_asset_filter() -> None:
     client = StubClient(
         exchange_info={
             "symbols": [
-                {"symbol": "AAAUSDT", "quoteAsset": "USDT"},
-                {"symbol": "AAABTC", "quoteAsset": "BTC"},
+                {"symbol": "AAAUSDT", "quoteAsset": "USDT", "status": "1"},
+                {"symbol": "AAABTC", "quoteAsset": "BTC", "status": "1"},
             ]
         },
         default_symbols=["AAAUSDT", "AAABTC"],
@@ -57,8 +57,8 @@ def test_default_symbols_intersection() -> None:
     client = StubClient(
         exchange_info={
             "symbols": [
-                {"symbol": "AAAUSDT", "quoteAsset": "USDT"},
-                {"symbol": "BBBUSDT", "quoteAsset": "USDT"},
+                {"symbol": "AAAUSDT", "quoteAsset": "USDT", "status": "1"},
+                {"symbol": "BBBUSDT", "quoteAsset": "USDT", "status": "1"},
             ]
         },
         default_symbols=["AAAUSDT"],
@@ -72,16 +72,16 @@ def test_default_symbols_intersection() -> None:
     result = build_universe(client, cfg)
 
     assert result.symbols == ["AAAUSDT"]
-    assert any(reject.symbol == "BBBUSDT" and reject.reason == "not_in_default_symbols" for reject in result.rejects)
+    assert any(reject.symbol == "BBBUSDT" and reject.reason == "not_in_defaultSymbols" for reject in result.rejects)
 
 
 def test_threshold_filters() -> None:
     client = StubClient(
         exchange_info={
             "symbols": [
-                {"symbol": "LOWVOLUSDT", "quoteAsset": "USDT"},
-                {"symbol": "LOWTRADESUSDT", "quoteAsset": "USDT"},
-                {"symbol": "KEEPUSDT", "quoteAsset": "USDT"},
+                {"symbol": "LOWVOLUSDT", "quoteAsset": "USDT", "status": "1"},
+                {"symbol": "LOWTRADESUSDT", "quoteAsset": "USDT", "status": "1"},
+                {"symbol": "KEEPUSDT", "quoteAsset": "USDT", "status": "1"},
             ]
         },
         default_symbols=["LOWVOLUSDT", "LOWTRADESUSDT", "KEEPUSDT"],
@@ -97,8 +97,8 @@ def test_threshold_filters() -> None:
 
     assert result.symbols == ["KEEPUSDT"]
     reasons = {reject.symbol: reject.reason for reject in result.rejects}
-    assert reasons["LOWVOLUSDT"] == "min_quote_volume_24h"
-    assert reasons["LOWTRADESUSDT"] == "min_trades_24h"
+    assert reasons["LOWVOLUSDT"] == "low_volume"
+    assert reasons["LOWTRADESUSDT"] == "low_trades"
 
 
 def test_default_symbols_empty_fails() -> None:
@@ -115,7 +115,7 @@ def test_default_symbols_empty_fails() -> None:
 
 def test_quote_volume_estimate_allows_missing_quote_volume() -> None:
     client = StubClient(
-        exchange_info={"symbols": [{"symbol": "ESTUSDT", "quoteAsset": "USDT"}]},
+        exchange_info={"symbols": [{"symbol": "ESTUSDT", "quoteAsset": "USDT", "status": "1"}]},
         default_symbols=["ESTUSDT"],
         tickers=[
             {
@@ -138,8 +138,8 @@ def test_missing_trade_count_rejected_when_required() -> None:
     client = StubClient(
         exchange_info={
             "symbols": [
-                {"symbol": "KEEPUSDT", "quoteAsset": "USDT"},
-                {"symbol": "MISSCOUNTUSDT", "quoteAsset": "USDT"},
+                {"symbol": "KEEPUSDT", "quoteAsset": "USDT", "status": "1"},
+                {"symbol": "MISSCOUNTUSDT", "quoteAsset": "USDT", "status": "1"},
             ]
         },
         default_symbols=["KEEPUSDT", "MISSCOUNTUSDT"],
@@ -159,12 +159,16 @@ def test_missing_trade_count_rejected_when_required() -> None:
     )
 
 
-def test_missing_mid_price_rejects_estimate() -> None:
+def test_missing_mid_price_rejects_no_volume_data() -> None:
+    """When quoteVolume is null and can't estimate (no mid_price), reject with no_volume_data.
+
+    AD-101: This is different from missing_24h_stats which is only for no_row or parse_error.
+    """
     client = StubClient(
         exchange_info={
             "symbols": [
-                {"symbol": "KEEPUSDT", "quoteAsset": "USDT"},
-                {"symbol": "MISSLASTUSDT", "quoteAsset": "USDT"},
+                {"symbol": "KEEPUSDT", "quoteAsset": "USDT", "status": "1"},
+                {"symbol": "MISSLASTUSDT", "quoteAsset": "USDT", "status": "1"},
             ]
         },
         default_symbols=["KEEPUSDT", "MISSLASTUSDT"],
@@ -172,6 +176,7 @@ def test_missing_mid_price_rejects_estimate() -> None:
             {"symbol": "KEEPUSDT", "quoteVolume": "1000", "count": 10},
             {"symbol": "MISSLASTUSDT", "quoteVolume": None, "volume": "100"},
         ],
+        # No book_tickers for MISSLASTUSDT, so mid_price can't be computed
     )
     cfg = UniverseConfig(min_quote_volume_24h=0, min_trades_24h=0)
 
@@ -179,17 +184,21 @@ def test_missing_mid_price_rejects_estimate() -> None:
 
     assert result.symbols == ["KEEPUSDT"]
     assert any(
-        reject.symbol == "MISSLASTUSDT" and reject.reason == "missing_24h_stats"
+        reject.symbol == "MISSLASTUSDT" and reject.reason == "no_volume_data"
         for reject in result.rejects
     )
 
 
-def test_missing_volume_rejects_missing_24h_stats() -> None:
+def test_invalid_volume_rejects_missing_24h_stats() -> None:
+    """When volume data fails to parse (empty string), reject with missing_24h_stats.
+
+    AD-101: missing_24h_stats is used for parse errors (like empty string for volume).
+    """
     client = StubClient(
         exchange_info={
             "symbols": [
-                {"symbol": "KEEPUSDT", "quoteAsset": "USDT"},
-                {"symbol": "MISSVOLUSDT", "quoteAsset": "USDT"},
+                {"symbol": "KEEPUSDT", "quoteAsset": "USDT", "status": "1"},
+                {"symbol": "MISSVOLUSDT", "quoteAsset": "USDT", "status": "1"},
             ]
         },
         default_symbols=["KEEPUSDT", "MISSVOLUSDT"],
@@ -198,7 +207,7 @@ def test_missing_volume_rejects_missing_24h_stats() -> None:
             {
                 "symbol": "MISSVOLUSDT",
                 "quoteVolume": None,
-                "volume": "",
+                "volume": "",  # Empty string causes parse_error
             },
         ],
     )

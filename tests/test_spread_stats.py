@@ -20,7 +20,9 @@ def test_compute_spread_stats_quantiles() -> None:
 
 
 def test_compute_spread_stats_tracks_invalid_quotes() -> None:
-    samples = [_sample_for_spread(10), SpreadSample(symbol="BTCUSDT", bid=0.0, ask=1.0)]
+    # For a quote to be invalid, mid = (bid + ask) / 2 must be <= 0
+    # Using bid=-1.0, ask=0.5 gives mid = -0.25 <= 0 -> invalid
+    samples = [_sample_for_spread(10), SpreadSample(symbol="BTCUSDT", bid=-1.0, ask=0.5)]
     stats = compute_spread_stats(samples)
 
     assert stats.invalid_quotes == 1

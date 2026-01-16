@@ -42,7 +42,9 @@ def _edge_with_unwind_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
 
 
 def _net_edge_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
-    return _edge_with_unwind_bps(stats, cfg)
+    # Use edge_mm_bps (maker/maker model) as the primary edge metric.
+    # This reflects normal spread-capture operation where we're maker on both sides.
+    return _edge_mm_bps(stats, cfg)
 
 
 def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:

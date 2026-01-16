@@ -160,6 +160,7 @@ def build_universe(
 
         ticker = ticker_stats.get(symbol)
         if ticker is None or ticker.missing_24h_stats:
+            # AD-101: missing_24h_stats is True only when symbol not in response or parse failed
             rejects.append(UniverseReject(symbol=symbol, reason="missing_24h_stats"))
             continue
 
@@ -176,7 +177,9 @@ def build_universe(
 
         quote_volume = ticker.quote_volume_effective
         if quote_volume is None:
-            rejects.append(UniverseReject(symbol=symbol, reason="missing_24h_stats"))
+            # Volume data unavailable (API returned null for both quoteVolume and volume,
+            # or we couldn't compute estimate). This is distinct from missing_24h_stats.
+            rejects.append(UniverseReject(symbol=symbol, reason="no_volume_data"))
             continue
 
         trade_count = ticker.trade_count
