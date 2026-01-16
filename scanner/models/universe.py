@@ -21,3 +21,4 @@ class UniverseResult:
     symbols: list[str]
     rejects: list[UniverseReject]
     stats: UniverseStats
+    source_flags: dict[str, dict[str, object]]
