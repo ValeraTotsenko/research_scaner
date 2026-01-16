@@ -121,6 +121,8 @@ class ThresholdsConfig(BaseModel):
     spread: SpreadThresholdsConfig = Field(default_factory=SpreadThresholdsConfig)
     depth: DepthThresholdsConfig = Field(default_factory=DepthThresholdsConfig)
     uptime_min: float = Field(default=0.9)
+    edge_min_bps: float = Field(default=3.0)
+    slippage_buffer_bps: float = Field(default=2.0)
 
 
 class ReportConfig(BaseModel):

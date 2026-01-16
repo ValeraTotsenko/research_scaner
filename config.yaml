@@ -51,6 +51,8 @@ thresholds:
     best_level_min_notional: 500.0
     unwind_slippage_max_bps: 25.0
   uptime_min: 0.95
+  edge_min_bps: 3.0
+  slippage_buffer_bps: 2.0
 
 fees:
   taker_bps: 4.0
