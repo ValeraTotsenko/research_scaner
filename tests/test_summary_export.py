@@ -23,6 +23,8 @@ def test_summary_export_columns(tmp_path: Path) -> None:
     result = ScoreResult(
         symbol="BTCUSDT",
         spread_stats=stats,
+        edge_mm_bps=6.0,
+        edge_with_unwind_bps=4.0,
         net_edge_bps=4.0,
         pass_spread=True,
         score=120.0,

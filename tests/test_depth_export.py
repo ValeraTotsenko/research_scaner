@@ -27,6 +27,8 @@ def _score(symbol: str) -> ScoreResult:
     return ScoreResult(
         symbol=symbol,
         spread_stats=_spread_stats(symbol),
+        edge_mm_bps=6.0,
+        edge_with_unwind_bps=4.0,
         net_edge_bps=5.0,
         pass_spread=True,
         score=90.0,
@@ -58,13 +60,25 @@ def test_export_depth_outputs(tmp_path: Path) -> None:
     csv_path = export_depth_metrics(tmp_path, results, band_bps=[5])
     assert csv_path.exists()
 
-    summary_path = export_summary_enriched(tmp_path, [_score("BTCUSDT")], results, band_bps=[5])
+    summary_path = export_summary_enriched(
+        tmp_path,
+        [_score("BTCUSDT")],
+        results,
+        band_bps=[5],
+        edge_min_bps=3.0,
+    )
     content = summary_path.read_text(encoding="utf-8")
     assert "pass_total" in content
 
 
 def test_export_summary_enriched_handles_missing_depth(tmp_path: Path) -> None:
-    summary_path = export_summary_enriched(tmp_path, [_score("BTCUSDT")], [], band_bps=[5])
+    summary_path = export_summary_enriched(
+        tmp_path,
+        [_score("BTCUSDT")],
+        [],
+        band_bps=[5],
+        edge_min_bps=3.0,
+    )
     content = summary_path.read_text(encoding="utf-8")
     assert "no_depth_data" in content
 
@@ -89,5 +103,11 @@ def test_export_summary_enriched_handles_missing_band_metrics(tmp_path: Path) ->
             fail_reasons=("no_valid_samples",),
         )
     ]
-    summary_path = export_summary_enriched(tmp_path, [_score("BTCUSDT")], results, band_bps=[5])
+    summary_path = export_summary_enriched(
+        tmp_path,
+        [_score("BTCUSDT")],
+        results,
+        band_bps=[5],
+        edge_min_bps=3.0,
+    )
     assert summary_path.exists()

@@ -1,2 +1,2 @@
-symbol,spread_median_bps,spread_p25_bps,spread_p10_bps,spread_p90_bps,uptime,quoteVolume_24h,quoteVolume_24h_raw,volume_24h_raw,mid_price,quoteVolume_24h_est,quoteVolume_24h_effective,trades_24h,net_edge_bps,pass_spread,score,fail_reasons
-AAAUSDT,10,7,5,15,0.95,1000,1000,,,,1000,10,4,true,100,
+symbol,spread_median_bps,spread_p25_bps,spread_p10_bps,spread_p90_bps,uptime,quoteVolume_24h,quoteVolume_24h_raw,volume_24h_raw,mid_price,quoteVolume_24h_est,quoteVolume_24h_effective,trades_24h,edge_mm_bps,edge_with_unwind_bps,net_edge_bps,pass_spread,score,fail_reasons
+AAAUSDT,10,7,5,15,0.95,1000,1000,,,,1000,10,6,4,4,true,100,

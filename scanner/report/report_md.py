@@ -29,6 +29,8 @@ class SummaryRow:
     quote_volume_24h_est: float | None
     quote_volume_24h_effective: float | None
     trades_24h: int | None
+    edge_mm_bps: float | None
+    edge_with_unwind_bps: float | None
     net_edge_bps: float | None
     pass_spread: bool
     score: float
@@ -127,6 +129,8 @@ def _read_summary(path: Path) -> list[SummaryRow]:
                     quote_volume_24h_est=_parse_float(row.get("quoteVolume_24h_est")),
                     quote_volume_24h_effective=_parse_float(row.get("quoteVolume_24h_effective")),
                     trades_24h=_parse_int(row.get("trades_24h")),
+                    edge_mm_bps=_parse_float(row.get("edge_mm_bps")),
+                    edge_with_unwind_bps=_parse_float(row.get("edge_with_unwind_bps")),
                     net_edge_bps=_parse_float(row.get("net_edge_bps")),
                     pass_spread=_parse_bool(row.get("pass_spread")),
                     score=float(row.get("score") or 0),
@@ -248,6 +252,11 @@ def _render_report(
                 f"p90_min_bps={cfg.thresholds.spread.p90_min_bps}, "
                 f"p90_max_bps={cfg.thresholds.spread.p90_max_bps}"
             ),
+            (
+                "- Edge thresholds: "
+                f"edge_min_bps={cfg.thresholds.edge_min_bps}, "
+                f"slippage_buffer_bps={cfg.thresholds.slippage_buffer_bps}"
+            ),
             f"- Depth thresholds: best_level_min_notional={cfg.thresholds.depth.best_level_min_notional}, unwind_slippage_max_bps={cfg.thresholds.depth.unwind_slippage_max_bps}",
             f"- Report shortlist size: top_n={cfg.report.top_n}",
         ]
@@ -259,7 +268,15 @@ def _render_report(
     total_symbols = len(summary_rows)
     pass_spread_count = sum(1 for row in summary_rows if row.pass_spread)
     if summary_enriched is None:
-        pass_total_count = "n/a (no depth stage)"
+        pass_total_count = str(
+            sum(
+                1
+                for row in summary_rows
+                if row.pass_spread
+                and row.edge_mm_bps is not None
+                and row.edge_mm_bps >= cfg.thresholds.edge_min_bps
+            )
+        )
     else:
         pass_total_count = str(sum(1 for row in summary_enriched if row.pass_total))
 
@@ -396,6 +413,7 @@ def _build_shortlist(
     summary_rows: list[SummaryRow],
     summary_enriched: list[SummaryEnrichedRow] | None,
     top_n: int,
+    edge_min_bps: float,
 ) -> list[SummaryEnrichedRow]:
     rows: list[SummaryEnrichedRow]
     if summary_enriched is None:
@@ -405,7 +423,11 @@ def _build_shortlist(
                 score=row.score,
                 pass_spread=row.pass_spread,
                 pass_depth=None,
-                pass_total=row.pass_spread,
+                pass_total=bool(
+                    row.pass_spread
+                    and row.edge_mm_bps is not None
+                    and row.edge_mm_bps >= edge_min_bps
+                ),
                 depth_fail_reasons=(),
             )
             for row in summary_rows
@@ -463,6 +485,7 @@ def generate_report(run_dir: Path, cfg: AppConfig) -> None:
         summary_rows=summary_rows,
         summary_enriched=summary_enriched,
         top_n=cfg.report.top_n,
+        edge_min_bps=cfg.thresholds.edge_min_bps,
     )
     shortlist_path = run_dir / "shortlist.csv"
     _write_shortlist(shortlist_path, shortlist_rows)

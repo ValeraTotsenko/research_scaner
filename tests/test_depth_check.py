@@ -22,8 +22,8 @@ class FakeDepthClient:
 
 
 def _config(duration_s: int = 1) -> AppConfig:
-    return AppConfig().model_copy(
-        update={
+    return AppConfig.model_validate(
+        {
             "sampling": {"depth": {"duration_s": duration_s, "interval_s": 1, "limit": 5}},
             "depth": {"top_n_levels": 1, "band_bps": [5], "stress_notional_usdt": 50.0},
             "thresholds": {"depth": {"best_level_min_notional": 50.0, "unwind_slippage_max_bps": 100.0}},
@@ -86,6 +86,8 @@ def _score_result(symbol: str, score: float, pass_spread: bool) -> ScoreResult:
     return ScoreResult(
         symbol=symbol,
         spread_stats=stats,
+        edge_mm_bps=0.0,
+        edge_with_unwind_bps=0.0,
         net_edge_bps=0.0,
         pass_spread=pass_spread,
         score=score,

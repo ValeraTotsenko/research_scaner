@@ -46,6 +46,8 @@ def _make_score(symbol: str, score: float, pass_spread: bool) -> ScoreResult:
     return ScoreResult(
         symbol=symbol,
         spread_stats=stats,
+        edge_mm_bps=6.0,
+        edge_with_unwind_bps=4.0,
         net_edge_bps=4.0,
         pass_spread=pass_spread,
         score=score,
@@ -107,7 +109,7 @@ def test_generate_report_creates_outputs(tmp_path: Path) -> None:
         ),
     ]
     export_depth_metrics(run_dir, depth_results, band_bps=[5])
-    export_summary_enriched(run_dir, scores, depth_results, band_bps=[5])
+    export_summary_enriched(run_dir, scores, depth_results, band_bps=[5], edge_min_bps=3.0)
 
     generate_report(run_dir, AppConfig())
 
@@ -136,6 +138,8 @@ def test_shortlist_sorting_stable(tmp_path: Path) -> None:
             "uptime": 1.0,
             "quoteVolume_24h": 100.0,
             "trades_24h": 10,
+            "edge_mm_bps": 6.0,
+            "edge_with_unwind_bps": 4.0,
             "net_edge_bps": 4.0,
             "pass_spread": True,
             "score": 100.0,
@@ -150,6 +154,8 @@ def test_shortlist_sorting_stable(tmp_path: Path) -> None:
             "uptime": 1.0,
             "quoteVolume_24h": 100.0,
             "trades_24h": 10,
+            "edge_mm_bps": 6.0,
+            "edge_with_unwind_bps": 4.0,
             "net_edge_bps": 4.0,
             "pass_spread": True,
             "score": 100.0,
@@ -164,6 +170,8 @@ def test_shortlist_sorting_stable(tmp_path: Path) -> None:
             "uptime": 1.0,
             "quoteVolume_24h": 100.0,
             "trades_24h": 10,
+            "edge_mm_bps": 6.0,
+            "edge_with_unwind_bps": 4.0,
             "net_edge_bps": 4.0,
             "pass_spread": True,
             "score": 90.0,

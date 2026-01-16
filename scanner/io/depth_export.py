@@ -111,6 +111,7 @@ def export_summary_enriched(
     depth_results: Sequence[DepthSymbolMetrics],
     *,
     band_bps: Sequence[int],
+    edge_min_bps: float,
     logger: logging.Logger | None = None,
     progress_every: int = 200,
 ) -> Path:
@@ -148,7 +149,12 @@ def export_summary_enriched(
                 current_symbol = result.symbol
                 depth = depth_by_symbol.get(result.symbol)
                 pass_depth = depth.pass_depth if depth else False
-                pass_total = result.pass_spread and pass_depth
+                pass_total = bool(
+                    result.pass_spread
+                    and pass_depth
+                    and result.edge_mm_bps is not None
+                    and result.edge_mm_bps >= edge_min_bps
+                )
                 row = {
                     "symbol": result.symbol,
                     "score": result.score,

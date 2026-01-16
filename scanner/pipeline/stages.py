@@ -233,6 +233,8 @@ def _read_summary_results(run_dir: Path) -> list[ScoreResult]:
             ScoreResult(
                 symbol=symbol,
                 spread_stats=stats,
+                edge_mm_bps=_parse_float(entry.get("edge_mm_bps")),
+                edge_with_unwind_bps=_parse_float(entry.get("edge_with_unwind_bps")),
                 net_edge_bps=_parse_float(entry.get("net_edge_bps")),
                 pass_spread=bool(entry.get("pass_spread")),
                 score=_parse_float(entry.get("score")) or 0.0,

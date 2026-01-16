@@ -13,16 +13,36 @@ from scanner.obs.logging import log_event
 class ScoreResult:
     symbol: str
     spread_stats: SpreadStats
+    edge_mm_bps: float | None
+    edge_with_unwind_bps: float | None
     net_edge_bps: float | None
     pass_spread: bool
     score: float
     fail_reasons: tuple[str, ...]
 
 
-def _net_edge_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
+def _edge_mm_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
     if stats.spread_median_bps is None:
         return None
-    return stats.spread_median_bps - (cfg.fees.maker_bps + cfg.fees.taker_bps)
+    return (
+        stats.spread_median_bps
+        - 2 * cfg.fees.maker_bps
+        - cfg.thresholds.slippage_buffer_bps
+    )
+
+
+def _edge_with_unwind_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
+    if stats.spread_median_bps is None:
+        return None
+    return (
+        stats.spread_median_bps
+        - (cfg.fees.maker_bps + cfg.fees.taker_bps)
+        - cfg.thresholds.slippage_buffer_bps
+    )
+
+
+def _net_edge_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
+    return _edge_with_unwind_bps(stats, cfg)
 
 
 def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
@@ -52,13 +72,15 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
     if stats.missing_24h_stats:
         fail_reasons.append("missing_24h_stats")
 
+    edge_mm_bps = _edge_mm_bps(stats, cfg)
+    edge_with_unwind_bps = _edge_with_unwind_bps(stats, cfg)
     net_edge_bps = _net_edge_bps(stats, cfg)
 
     volatility_penalty = 0.0
     if stats.spread_p90_bps is not None and stats.spread_p10_bps is not None:
         volatility_penalty = max(stats.spread_p90_bps - stats.spread_p10_bps, 0.0)
 
-    base_edge = max(net_edge_bps or 0.0, 0.0)
+    base_edge = max(edge_mm_bps or 0.0, 0.0)
     score = base_edge + stats.uptime * 100 - volatility_penalty
 
     pass_spread = (
@@ -76,6 +98,8 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
     return ScoreResult(
         symbol=symbol,
         spread_stats=stats,
+        edge_mm_bps=edge_mm_bps,
+        edge_with_unwind_bps=edge_with_unwind_bps,
         net_edge_bps=net_edge_bps,
         pass_spread=pass_spread,
         score=score,

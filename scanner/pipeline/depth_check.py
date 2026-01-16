@@ -300,6 +300,7 @@ def run_depth_check(
             candidates,
             results,
             band_bps=depth_cfg.band_bps,
+            edge_min_bps=cfg.thresholds.edge_min_bps,
             logger=logger,
         )
 
