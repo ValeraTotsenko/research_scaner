@@ -17,6 +17,7 @@ from scanner.mexc.client import MexcClient
 from scanner.obs.logging import log_event
 from scanner.pipeline.depth_check import run_depth_check
 from scanner.pipeline.spread_sampling import run_spread_sampling
+from scanner.pipeline.ticker_24h import build_ticker24h_stats
 from scanner.pipeline.universe import build_universe
 from scanner.report.report_md import generate_report
 from scanner.validation.artifacts import (
@@ -110,7 +111,14 @@ def _empty_spread_stats(symbol: str) -> SpreadStats:
         uptime=0.0,
         insufficient_samples=True,
         quote_volume_24h=None,
+        quote_volume_24h_raw=None,
+        volume_24h_raw=None,
+        mid_price=None,
+        quote_volume_24h_est=None,
+        quote_volume_24h_effective=None,
         trades_24h=None,
+        missing_24h_stats=False,
+        missing_24h_reason=None,
     )
 
 
@@ -118,7 +126,14 @@ def _enrich_spread_stats(
     stats: SpreadStats,
     *,
     quote_volume_24h: float | None,
+    quote_volume_24h_raw: float | None,
+    volume_24h_raw: float | None,
+    mid_price: float | None,
+    quote_volume_24h_est: float | None,
+    quote_volume_24h_effective: float | None,
     trades_24h: int | None,
+    missing_24h_stats: bool,
+    missing_24h_reason: str | None,
 ) -> SpreadStats:
     return SpreadStats(
         symbol=stats.symbol,
@@ -132,7 +147,14 @@ def _enrich_spread_stats(
         uptime=stats.uptime,
         insufficient_samples=stats.insufficient_samples,
         quote_volume_24h=quote_volume_24h,
+        quote_volume_24h_raw=quote_volume_24h_raw,
+        volume_24h_raw=volume_24h_raw,
+        mid_price=mid_price,
+        quote_volume_24h_est=quote_volume_24h_est,
+        quote_volume_24h_effective=quote_volume_24h_effective,
         trades_24h=trades_24h,
+        missing_24h_stats=missing_24h_stats,
+        missing_24h_reason=missing_24h_reason,
     )
 
 
@@ -194,7 +216,18 @@ def _read_summary_results(run_dir: Path) -> list[ScoreResult]:
             uptime=_parse_float(entry.get("uptime")) or 0.0,
             insufficient_samples="insufficient_samples" in reasons,
             quote_volume_24h=_parse_float(entry.get("quoteVolume_24h")),
+            quote_volume_24h_raw=_parse_float(entry.get("quoteVolume_24h_raw")),
+            volume_24h_raw=_parse_float(entry.get("volume_24h_raw")),
+            mid_price=_parse_float(entry.get("mid_price")),
+            quote_volume_24h_est=_parse_float(entry.get("quoteVolume_24h_est")),
+            quote_volume_24h_effective=_parse_float(entry.get("quoteVolume_24h_effective")),
             trades_24h=_parse_int(entry.get("trades_24h")),
+            missing_24h_stats=bool(entry.get("missing_24h_stats"))
+            if "missing_24h_stats" not in reasons
+            else True,
+            missing_24h_reason=str(entry.get("missing_24h_reason"))
+            if entry.get("missing_24h_reason")
+            else None,
         )
         results.append(
             ScoreResult(
@@ -297,7 +330,12 @@ def _validate_outputs_report(ctx: StageContext) -> list[str]:
 def _run_universe(ctx: StageContext) -> dict[str, object]:
     if ctx.client is None:
         raise RuntimeError("MEXC client required for universe stage")
-    result = build_universe(ctx.client, ctx.config.universe)
+    result = build_universe(
+        ctx.client,
+        ctx.config.universe,
+        logger=ctx.logger,
+        metrics_path=ctx.metrics_path,
+    )
     export_universe(ctx.run_dir, result)
     return {
         "symbols_total": result.stats.total,
@@ -336,11 +374,16 @@ def _run_score(ctx: StageContext) -> dict[str, object]:
     raw_path = _raw_bookticker_path(ctx.run_dir, ctx.config)
     samples_by_symbol = _read_spread_samples(raw_path, symbols)
     ticker_payload = ctx.client.get_ticker_24hr()
-    ticker_map = {
-        entry.get("symbol"): entry
-        for entry in ticker_payload
-        if isinstance(entry, dict) and entry.get("symbol")
-    }
+    book_payload = ctx.client.get_book_ticker()
+    ticker_stats = build_ticker24h_stats(
+        ticker_payload,
+        book_payload,
+        symbols=symbols,
+        use_quote_volume_estimate=ctx.config.universe.use_quote_volume_estimate,
+        require_trade_count=ctx.config.universe.require_trade_count,
+        logger=ctx.logger,
+        log_summary=False,
+    )
 
     results: list[ScoreResult] = []
     for symbol in symbols:
@@ -349,11 +392,18 @@ def _run_score(ctx: StageContext) -> dict[str, object]:
             stats = compute_spread_stats(samples)
         else:
             stats = _empty_spread_stats(symbol)
-        ticker = ticker_map.get(symbol, {})
+        ticker = ticker_stats[symbol]
         stats = _enrich_spread_stats(
             stats,
-            quote_volume_24h=_parse_float(ticker.get("quoteVolume")),
-            trades_24h=_parse_int(ticker.get("count")),
+            quote_volume_24h=ticker.quote_volume_effective,
+            quote_volume_24h_raw=ticker.quote_volume_raw,
+            volume_24h_raw=ticker.volume_raw,
+            mid_price=ticker.mid_price,
+            quote_volume_24h_est=ticker.quote_volume_est,
+            quote_volume_24h_effective=ticker.quote_volume_effective,
+            trades_24h=ticker.trade_count,
+            missing_24h_stats=ticker.missing_24h_stats,
+            missing_24h_reason=ticker.missing_24h_reason,
         )
         results.append(score_symbol(stats, ctx.config))
 

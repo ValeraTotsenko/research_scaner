@@ -30,7 +30,14 @@ class SpreadStats:
     uptime: float
     insufficient_samples: bool
     quote_volume_24h: float | None = None
+    quote_volume_24h_raw: float | None = None
+    volume_24h_raw: float | None = None
+    mid_price: float | None = None
+    quote_volume_24h_est: float | None = None
+    quote_volume_24h_effective: float | None = None
     trades_24h: int | None = None
+    missing_24h_stats: bool = False
+    missing_24h_reason: str | None = None
 
 
 def _percentile(sorted_values: Sequence[float], percentile: float) -> float:

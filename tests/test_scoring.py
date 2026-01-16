@@ -17,6 +17,7 @@ def test_score_symbol_pass_spread() -> None:
         insufficient_samples=False,
         quote_volume_24h=1_000_000.0,
         trades_24h=500,
+        missing_24h_stats=False,
     )
     cfg = AppConfig(
         thresholds=ThresholdsConfig(
@@ -45,6 +46,7 @@ def test_score_symbol_flags_fail_reasons() -> None:
         insufficient_samples=False,
         quote_volume_24h=None,
         trades_24h=None,
+        missing_24h_stats=True,
     )
     cfg = AppConfig(
         thresholds=ThresholdsConfig(

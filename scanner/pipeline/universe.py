@@ -3,33 +3,17 @@ from __future__ import annotations
 import logging
 import re
 from collections import Counter
+from pathlib import Path
 from typing import Iterable
 
 from scanner.config import UniverseConfig
 from scanner.models.universe import UniverseReject, UniverseResult, UniverseStats
 from scanner.obs.logging import log_event
+from scanner.pipeline.ticker_24h import build_ticker24h_stats
 
 
 class UniverseBuildError(RuntimeError):
     """Raised when the universe cannot be built safely."""
-
-
-def _parse_float(value: object) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _parse_int(value: object) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(float(value))
-    except (TypeError, ValueError):
-        return None
 
 
 def _top_rejects(rejects: Iterable[UniverseReject], limit: int = 5) -> list[dict[str, int | str]]:
@@ -40,8 +24,14 @@ def _top_rejects(rejects: Iterable[UniverseReject], limit: int = 5) -> list[dict
     ]
 
 
-def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
-    logger = logging.getLogger(__name__)
+def build_universe(
+    client: object,
+    cfg: UniverseConfig,
+    *,
+    logger: logging.Logger | None = None,
+    metrics_path: Path | None = None,
+) -> UniverseResult:
+    logger = logger or logging.getLogger(__name__)
 
     exchange_info = client.get_exchange_info()
     symbols_payload = exchange_info.get("symbols", [])
@@ -81,11 +71,17 @@ def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
             tradable.append(symbol)
 
     tickers = client.get_ticker_24hr()
-    ticker_map = {
-        entry.get("symbol"): entry
-        for entry in tickers
-        if isinstance(entry, dict) and entry.get("symbol")
-    }
+    book_tickers = client.get_book_ticker()
+    ticker_stats = build_ticker24h_stats(
+        tickers,
+        book_tickers,
+        symbols=tradable,
+        use_quote_volume_estimate=cfg.use_quote_volume_estimate,
+        require_trade_count=cfg.require_trade_count,
+        logger=logger,
+        metrics_path=metrics_path,
+        log_summary=True,
+    )
 
     blacklist_patterns = [re.compile(pattern) for pattern in cfg.blacklist_regex]
     whitelist = set(cfg.whitelist)
@@ -96,9 +92,9 @@ def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
             rejects.append(UniverseReject(symbol=symbol, reason="blacklisted"))
             continue
 
-        ticker = ticker_map.get(symbol)
-        if not ticker:
-            rejects.append(UniverseReject(symbol=symbol, reason="missing_24h_ticker"))
+        ticker = ticker_stats.get(symbol)
+        if ticker is None or ticker.missing_24h_stats:
+            rejects.append(UniverseReject(symbol=symbol, reason="missing_24h_stats"))
             continue
 
         if symbol in whitelist:
@@ -112,35 +108,12 @@ def build_universe(client: object, cfg: UniverseConfig) -> UniverseResult:
             kept.append(symbol)
             continue
 
-        quote_volume = _parse_float(ticker.get("quoteVolume"))
-        if quote_volume is None and cfg.use_quote_volume_estimate:
-            volume = _parse_float(ticker.get("volume"))
-            last_price = _parse_float(ticker.get("lastPrice"))
-            if volume is None:
-                rejects.append(UniverseReject(symbol=symbol, reason="missing_24h_volume"))
-                continue
-            if last_price is None or last_price <= 0:
-                rejects.append(
-                    UniverseReject(symbol=symbol, reason="missing_last_price_for_estimate")
-                )
-                continue
-            quote_volume = volume * last_price
-            log_event(
-                logger,
-                logging.INFO,
-                "universe_volume_estimated",
-                "quoteVolume missing; estimated notional volume",
-                symbol=symbol,
-                volume=volume,
-                lastPrice=last_price,
-                quoteVolume_est=quote_volume,
-            )
-
+        quote_volume = ticker.quote_volume_effective
         if quote_volume is None:
-            rejects.append(UniverseReject(symbol=symbol, reason="missing_24h_volume"))
+            rejects.append(UniverseReject(symbol=symbol, reason="missing_24h_stats"))
             continue
 
-        trade_count = _parse_int(ticker.get("count"))
+        trade_count = ticker.trade_count
         if trade_count is None and cfg.require_trade_count:
             rejects.append(UniverseReject(symbol=symbol, reason="missing_trade_count"))
             continue
