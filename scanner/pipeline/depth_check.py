@@ -11,7 +11,7 @@ from scanner.analytics.depth_metrics import aggregate_depth_metrics, compute_sna
 from scanner.analytics.scoring import ScoreResult
 from scanner.config import AppConfig, DepthConfig, DepthThresholdsConfig
 from scanner.io.depth_export import export_depth_metrics, export_summary_enriched
-from scanner.mexc.errors import FatalHttpError, RateLimitedError, TransientHttpError
+from scanner.mexc.errors import FatalHttpError, RateLimitedError, TransientHttpError, WafLimitedError
 from scanner.models.depth import DepthCheckResult, DepthSymbolMetrics
 from scanner.obs.logging import log_event
 
@@ -282,7 +282,7 @@ def run_depth_check(
                     error=str(exc),
                     tick_idx=tick_idx,
                 )
-            except (RateLimitedError, TransientHttpError) as exc:
+            except (RateLimitedError, TransientHttpError, WafLimitedError) as exc:
                 depth_fail_total += 1
                 log_event(
                     logger,

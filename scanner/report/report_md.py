@@ -11,7 +11,7 @@ from typing import Iterable
 from scanner.config import AppConfig
 from scanner.io.summary_export import SUMMARY_COLUMNS
 from scanner.obs.logging import log_event
-from scanner.obs.metrics import update_metrics
+from scanner.obs.metrics import summarize_api_health, update_metrics
 
 
 @dataclass(frozen=True)
@@ -224,6 +224,7 @@ def _markdown_table(headers: list[str], rows: list[list[str]]) -> list[str]:
 def _render_report(
     *,
     run_meta: dict[str, object],
+    metrics_payload: dict[str, object] | None,
     cfg: AppConfig,
     summary_rows: list[SummaryRow],
     summary_enriched: list[SummaryEnrichedRow] | None,
@@ -237,7 +238,14 @@ def _render_report(
     git_commit = run_meta.get("git_commit", "")
     generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-    lines += ["## Run meta", "", f"- Run ID: {run_id}", f"- Started at: {started_at}", f"- Report generated at: {generated_at}", f"- Git commit: {git_commit}"]
+    lines += [
+        "## Run meta",
+        "",
+        f"- Run ID: {run_id}",
+        f"- Started at: {started_at}",
+        f"- Report generated at: {generated_at}",
+        f"- Git commit: {git_commit}",
+    ]
     lines.append("")
     lines.append("### Parameters")
     lines.append("")
@@ -272,6 +280,23 @@ def _render_report(
             f"- Report shortlist size: top_n={cfg.report.top_n}",
         ]
     )
+
+    lines.append("")
+    lines.append("## API health summary")
+    lines.append("")
+    api_health = summarize_api_health(metrics_payload or {})
+    run_health = run_meta.get("run_health", api_health.get("run_health", "n/a"))
+    lines.append(f"- Run health: {run_health}")
+    if metrics_payload:
+        lines.extend(
+            [
+                f"- HTTP 429 total: {api_health['http_429_total']}",
+                f"- HTTP 403 total: {api_health['http_403_total']}",
+                f"- HTTP 5xx total: {api_health['http_5xx_total']}",
+            ]
+        )
+    else:
+        lines.append("- HTTP metrics unavailable.")
 
     lines.append("")
     lines.append("## Universe stats")
@@ -501,10 +526,18 @@ def generate_report(run_dir: Path, cfg: AppConfig) -> None:
     shortlist_path = run_dir / "shortlist.csv"
     _write_shortlist(shortlist_path, shortlist_rows)
 
+    metrics_payload: dict[str, object] | None = None
+    metrics_path = run_dir / "metrics.json"
+    if metrics_path.exists():
+        raw_metrics = metrics_path.read_text(encoding="utf-8").strip()
+        if raw_metrics:
+            metrics_payload = json.loads(raw_metrics)
+
     report_path = run_dir / "report.md"
     report_path.write_text(
         _render_report(
             run_meta=run_meta,
+            metrics_payload=metrics_payload,
             cfg=cfg,
             summary_rows=summary_rows,
             summary_enriched=summary_enriched,
@@ -514,7 +547,6 @@ def generate_report(run_dir: Path, cfg: AppConfig) -> None:
         encoding="utf-8",
     )
 
-    metrics_path = run_dir / "metrics.json"
     update_metrics(
         metrics_path,
         increments={"report_generated_total": 1},

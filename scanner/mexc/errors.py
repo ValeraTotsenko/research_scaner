@@ -24,6 +24,10 @@ class RateLimitedError(MexcHttpError):
     pass
 
 
+class WafLimitedError(MexcHttpError):
+    pass
+
+
 class TransientHttpError(MexcHttpError):
     pass
 

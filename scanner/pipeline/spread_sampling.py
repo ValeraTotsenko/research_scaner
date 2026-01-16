@@ -8,7 +8,7 @@ from pathlib import Path
 
 from scanner.config import SamplingConfig
 from scanner.io.raw_writer import RawJsonlWriter, create_raw_bookticker_writer
-from scanner.mexc.errors import FatalHttpError, RateLimitedError, TransientHttpError
+from scanner.mexc.errors import FatalHttpError, RateLimitedError, TransientHttpError, WafLimitedError
 from scanner.models.spread import SpreadSampleResult, compute_spread_bps
 from scanner.obs.logging import log_event
 
@@ -108,7 +108,7 @@ def run_spread_sampling(
                         for symbol in symbols:
                             try:
                                 per_symbol_payload.append(client.get_book_ticker_symbol(symbol))
-                            except (RateLimitedError, TransientHttpError, FatalHttpError):
+                            except (RateLimitedError, TransientHttpError, WafLimitedError, FatalHttpError):
                                 per_symbol_failures += 1
                         latency_ms = round((time.monotonic() - req_start) * 1000, 2)
                         if per_symbol_payload:
@@ -135,7 +135,7 @@ def run_spread_sampling(
                         tick_idx=tick_idx,
                         error=str(exc),
                     )
-            except (RateLimitedError, TransientHttpError) as exc:
+            except (RateLimitedError, TransientHttpError, WafLimitedError) as exc:
                 tick_fail += 1
                 log_event(
                     logger,

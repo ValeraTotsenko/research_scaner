@@ -34,6 +34,10 @@ def create_run_layout(output_dir: Path, run_id: str, config: AppConfig) -> RunLa
         "errors_total": 0,
         "retries_total": 0,
         "requests_by_status": {},
+        "http_429_total": 0,
+        "http_403_total": 0,
+        "http_5xx_total": 0,
+        "run_degraded": 0,
         "latency_ms": {"count": 0, "min": None, "max": None, "buckets": {}},
         "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
@@ -64,6 +68,10 @@ def ensure_run_layout(output_dir: Path, run_id: str, config: AppConfig) -> RunLa
             "errors_total": 0,
             "retries_total": 0,
             "requests_by_status": {},
+            "http_429_total": 0,
+            "http_403_total": 0,
+            "http_5xx_total": 0,
+            "run_degraded": 0,
             "latency_ms": {"count": 0, "min": None, "max": None, "buckets": {}},
             "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
@@ -85,6 +93,7 @@ def write_run_meta(
     git_commit: str | None,
     config: dict[str, Any] | None,
     status: str,
+    run_health: str,
     scanner_version: str,
     spec_version: str,
     error: str | None = None,
@@ -102,6 +111,7 @@ def write_run_meta(
         "config": config_payload,
         "config_hash": config_hash,
         "status": status,
+        "run_health": run_health,
         "scanner_version": scanner_version,
         "spec_version": spec_version,
     }
