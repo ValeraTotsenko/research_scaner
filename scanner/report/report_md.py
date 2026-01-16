@@ -23,6 +23,11 @@ class SummaryRow:
     spread_p90_bps: float | None
     uptime: float | None
     quote_volume_24h: float | None
+    quote_volume_24h_raw: float | None
+    volume_24h_raw: float | None
+    mid_price: float | None
+    quote_volume_24h_est: float | None
+    quote_volume_24h_effective: float | None
     trades_24h: int | None
     net_edge_bps: float | None
     pass_spread: bool
@@ -116,6 +121,11 @@ def _read_summary(path: Path) -> list[SummaryRow]:
                     spread_p90_bps=_parse_float(row.get("spread_p90_bps")),
                     uptime=_parse_float(row.get("uptime")),
                     quote_volume_24h=_parse_float(row.get("quoteVolume_24h")),
+                    quote_volume_24h_raw=_parse_float(row.get("quoteVolume_24h_raw")),
+                    volume_24h_raw=_parse_float(row.get("volume_24h_raw")),
+                    mid_price=_parse_float(row.get("mid_price")),
+                    quote_volume_24h_est=_parse_float(row.get("quoteVolume_24h_est")),
+                    quote_volume_24h_effective=_parse_float(row.get("quoteVolume_24h_effective")),
                     trades_24h=_parse_int(row.get("trades_24h")),
                     net_edge_bps=_parse_float(row.get("net_edge_bps")),
                     pass_spread=_parse_bool(row.get("pass_spread")),

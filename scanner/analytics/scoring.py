@@ -45,7 +45,7 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
         if stats.spread_p90_bps > cfg.thresholds.spread.p90_max_bps:
             fail_reasons.append("spread_p90_high")
 
-    if stats.quote_volume_24h is None or stats.trades_24h is None:
+    if stats.missing_24h_stats:
         fail_reasons.append("missing_24h_stats")
 
     net_edge_bps = _net_edge_bps(stats, cfg)
