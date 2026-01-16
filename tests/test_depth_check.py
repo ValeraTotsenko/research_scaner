@@ -4,7 +4,7 @@ import pytest
 
 from scanner.config import AppConfig
 from scanner.mexc.errors import RateLimitedError
-from scanner.pipeline.depth_check import _select_candidates, run_depth_check
+from scanner.pipeline.depth_check import _evaluate_depth_criteria, _select_candidates, run_depth_check
 from scanner.analytics.scoring import ScoreResult
 from scanner.analytics.spread_stats import SpreadStats
 
@@ -68,6 +68,74 @@ def test_rate_limit_degrades(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
 
     assert result.depth_fail_total == 1
     assert result.ticks_success == 1
+
+
+def test_depth_criteria_fail_reasons_unit() -> None:
+    cfg = AppConfig.model_validate(
+        {
+            "depth": {
+                "top_n_levels": 1,
+                "band_bps": [5, 10],
+                "stress_notional_usdt": 50.0,
+                "enable_band_checks": True,
+                "enable_topN_checks": True,
+            },
+            "thresholds": {
+                "depth": {
+                    "best_level_min_notional": 50.0,
+                    "unwind_slippage_max_bps": 100.0,
+                    "band_10bps_min_notional": 200.0,
+                    "topN_min_notional": 300.0,
+                }
+            },
+        }
+    )
+    base_aggregates = {
+        "best_bid_notional_median": 60.0,
+        "best_ask_notional_median": 70.0,
+        "topn_bid_notional_median": 400.0,
+        "topn_ask_notional_median": 400.0,
+        "band_bid_notional_median": {10: 250.0},
+        "unwind_slippage_p90_bps": 90.0,
+    }
+
+    result = _evaluate_depth_criteria(base_aggregates, thresholds=cfg.thresholds.depth, depth_cfg=cfg.depth)
+    assert result.fail_reasons == ()
+
+    aggregates = dict(base_aggregates, best_bid_notional_median=40.0)
+    result = _evaluate_depth_criteria(aggregates, thresholds=cfg.thresholds.depth, depth_cfg=cfg.depth)
+    assert "best_bid_notional_low" in result.fail_reasons
+
+    aggregates = dict(base_aggregates, best_ask_notional_median=40.0)
+    result = _evaluate_depth_criteria(aggregates, thresholds=cfg.thresholds.depth, depth_cfg=cfg.depth)
+    assert "best_ask_notional_low" in result.fail_reasons
+
+    aggregates = dict(base_aggregates, unwind_slippage_p90_bps=120.0)
+    result = _evaluate_depth_criteria(aggregates, thresholds=cfg.thresholds.depth, depth_cfg=cfg.depth)
+    assert "unwind_slippage_high" in result.fail_reasons
+
+    aggregates = dict(base_aggregates, band_bid_notional_median={10: 150.0})
+    result = _evaluate_depth_criteria(aggregates, thresholds=cfg.thresholds.depth, depth_cfg=cfg.depth)
+    assert "band_10bps_notional_low" in result.fail_reasons
+
+    aggregates = dict(base_aggregates, topn_bid_notional_median=200.0)
+    result = _evaluate_depth_criteria(aggregates, thresholds=cfg.thresholds.depth, depth_cfg=cfg.depth)
+    assert "topn_notional_low" in result.fail_reasons
+
+
+def test_depth_pass_equals_no_fail_reasons(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    client = FakeDepthClient(
+        {
+            "BTCUSDT": [
+                {"bids": [["100", "1"]], "asks": [["101", "1"]], "lastUpdateId": 1}
+            ]
+        }
+    )
+
+    result = run_depth_check(client, ["BTCUSDT"], _config(), tmp_path)
+    depth_result = result.symbols[0]
+    assert depth_result.pass_depth == (len(depth_result.fail_reasons) == 0)
 
 
 def _score_result(symbol: str, score: float, pass_spread: bool) -> ScoreResult:

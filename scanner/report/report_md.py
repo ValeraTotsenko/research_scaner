@@ -52,7 +52,7 @@ class DepthRow:
     symbol: str
     pass_depth: bool
     uptime: float | None
-    fail_reasons: tuple[str, ...]
+    depth_fail_reasons: tuple[str, ...]
 
 
 SUMMARY_REQUIRED_COLUMNS = set(SUMMARY_COLUMNS)
@@ -64,7 +64,7 @@ SUMMARY_ENRICHED_REQUIRED_COLUMNS = {
     "pass_total",
     "depth_fail_reasons",
 }
-DEPTH_REQUIRED_COLUMNS = {"symbol", "pass_depth", "uptime", "fail_reasons"}
+DEPTH_REQUIRED_COLUMNS = {"symbol", "pass_depth", "uptime", "depth_fail_reasons"}
 
 
 def _parse_float(value: object) -> float | None:
@@ -184,7 +184,7 @@ def _read_depth_metrics(path: Path) -> list[DepthRow]:
                     symbol=str(row.get("symbol", "")),
                     pass_depth=_parse_bool(row.get("pass_depth")),
                     uptime=_parse_float(row.get("uptime")),
-                    fail_reasons=_split_reasons(row.get("fail_reasons")),
+                    depth_fail_reasons=_split_reasons(row.get("depth_fail_reasons")),
                 )
             )
     return rows
@@ -257,7 +257,18 @@ def _render_report(
                 f"edge_min_bps={cfg.thresholds.edge_min_bps}, "
                 f"slippage_buffer_bps={cfg.thresholds.slippage_buffer_bps}"
             ),
-            f"- Depth thresholds: best_level_min_notional={cfg.thresholds.depth.best_level_min_notional}, unwind_slippage_max_bps={cfg.thresholds.depth.unwind_slippage_max_bps}",
+            (
+                "- Depth thresholds: "
+                f"best_level_min_notional={cfg.thresholds.depth.best_level_min_notional}, "
+                f"unwind_slippage_max_bps={cfg.thresholds.depth.unwind_slippage_max_bps}, "
+                f"band_10bps_min_notional={cfg.thresholds.depth.band_10bps_min_notional}, "
+                f"topN_min_notional={cfg.thresholds.depth.topN_min_notional}"
+            ),
+            (
+                "- Depth optional checks: "
+                f"enable_band_checks={cfg.depth.enable_band_checks}, "
+                f"enable_topN_checks={cfg.depth.enable_topN_checks}"
+            ),
             f"- Report shortlist size: top_n={cfg.report.top_n}",
         ]
     )
@@ -382,7 +393,7 @@ def _render_report(
     else:
         if depth_rows:
             for row in depth_rows:
-                for reason in row.fail_reasons:
+                for reason in row.depth_fail_reasons:
                     depth_reasons[reason] = depth_reasons.get(reason, 0) + 1
         else:
             for row in summary_enriched:

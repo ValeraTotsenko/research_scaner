@@ -70,6 +70,11 @@ def test_export_summary_enriched_applies_edge_min(tmp_path: Path) -> None:
         band_bid_notional_median={5: 200.0},
         unwind_slippage_p90_bps=25.0,
         uptime=1.0,
+        best_bid_notional_pass=True,
+        best_ask_notional_pass=True,
+        unwind_slippage_pass=True,
+        band_10bps_notional_pass=None,
+        topn_notional_pass=None,
         pass_depth=True,
         fail_reasons=(),
     )
@@ -82,6 +87,8 @@ def test_export_summary_enriched_applies_edge_min(tmp_path: Path) -> None:
         edge_min_bps=3.0,
     )
 
-    rows = summary_path.read_text(encoding="utf-8").splitlines()[1:]
-    pass_total = rows[0].split(",")[4]
-    assert pass_total == "False"
+    lines = summary_path.read_text(encoding="utf-8").splitlines()
+    headers = lines[0].split(",")
+    values = lines[1].split(",")
+    row = dict(zip(headers, values))
+    assert row["pass_total"] == "False"

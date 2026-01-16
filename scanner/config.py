@@ -105,6 +105,8 @@ class DepthThresholdsConfig(BaseModel):
 
     best_level_min_notional: float = Field(default=100.0)
     unwind_slippage_max_bps: float = Field(default=50.0)
+    band_10bps_min_notional: float | None = Field(default=None)
+    topN_min_notional: float | None = Field(default=None)
 
 
 class DepthConfig(BaseModel):
@@ -113,6 +115,8 @@ class DepthConfig(BaseModel):
     top_n_levels: int = Field(default=10)
     band_bps: list[int] = Field(default_factory=lambda: [5, 10, 20])
     stress_notional_usdt: float = Field(default=100.0)
+    enable_band_checks: bool = Field(default=False)
+    enable_topN_checks: bool = Field(default=False)
 
 
 class ThresholdsConfig(BaseModel):

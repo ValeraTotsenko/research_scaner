@@ -9,7 +9,7 @@ from typing import Iterable, Sequence
 
 from scanner.analytics.depth_metrics import aggregate_depth_metrics, compute_snapshot_metrics
 from scanner.analytics.scoring import ScoreResult
-from scanner.config import AppConfig
+from scanner.config import AppConfig, DepthConfig, DepthThresholdsConfig
 from scanner.io.depth_export import export_depth_metrics, export_summary_enriched
 from scanner.mexc.errors import FatalHttpError, RateLimitedError, TransientHttpError
 from scanner.models.depth import DepthCheckResult, DepthSymbolMetrics
@@ -25,6 +25,16 @@ class _DepthSymbolState:
     empty_book_count: int = 0
     invalid_book_count: int = 0
     symbol_unavailable_count: int = 0
+
+
+@dataclass(frozen=True)
+class _DepthCriteriaResult:
+    best_bid_notional_pass: bool
+    best_ask_notional_pass: bool
+    unwind_slippage_pass: bool
+    band_10bps_notional_pass: bool | None
+    topn_notional_pass: bool | None
+    fail_reasons: tuple[str, ...]
 
 
 def _select_candidates(candidates: Sequence[object], limit: int) -> tuple[list[str], int]:
@@ -61,6 +71,76 @@ def _classify_snapshot_error(exc: ValueError) -> str:
     if "Depth level" in message:
         return "invalid_book_levels"
     return "invalid_book_levels"
+
+
+def _evaluate_depth_criteria(
+    aggregates: dict[str, object],
+    *,
+    thresholds: DepthThresholdsConfig,
+    depth_cfg: DepthConfig,
+) -> _DepthCriteriaResult:
+    fail_reasons: list[str] = []
+
+    best_bid_median = aggregates["best_bid_notional_median"]
+    best_ask_median = aggregates["best_ask_notional_median"]
+    unwind_p90 = aggregates["unwind_slippage_p90_bps"]
+
+    if best_bid_median is None:
+        best_bid_pass = False
+        fail_reasons.append("missing_best_bid_notional")
+    else:
+        best_bid_pass = best_bid_median >= thresholds.best_level_min_notional
+        if not best_bid_pass:
+            fail_reasons.append("best_bid_notional_low")
+
+    if best_ask_median is None:
+        best_ask_pass = False
+        fail_reasons.append("missing_best_ask_notional")
+    else:
+        best_ask_pass = best_ask_median >= thresholds.best_level_min_notional
+        if not best_ask_pass:
+            fail_reasons.append("best_ask_notional_low")
+
+    if unwind_p90 is None:
+        unwind_slippage_pass = False
+        fail_reasons.append("missing_unwind_slippage")
+    else:
+        unwind_slippage_pass = unwind_p90 <= thresholds.unwind_slippage_max_bps
+        if not unwind_slippage_pass:
+            fail_reasons.append("unwind_slippage_high")
+
+    band_10bps_pass: bool | None = None
+    if depth_cfg.enable_band_checks and thresholds.band_10bps_min_notional is not None:
+        band_medians = aggregates["band_bid_notional_median"] or {}
+        band_value = band_medians.get(10)
+        if band_value is None:
+            band_10bps_pass = False
+            fail_reasons.append("missing_band_10bps_notional")
+        else:
+            band_10bps_pass = band_value >= thresholds.band_10bps_min_notional
+            if not band_10bps_pass:
+                fail_reasons.append("band_10bps_notional_low")
+
+    topn_pass: bool | None = None
+    if depth_cfg.enable_topN_checks and thresholds.topN_min_notional is not None:
+        topn_bid = aggregates["topn_bid_notional_median"]
+        topn_ask = aggregates["topn_ask_notional_median"]
+        if topn_bid is None or topn_ask is None:
+            topn_pass = False
+            fail_reasons.append("missing_topn_notional")
+        else:
+            topn_pass = min(topn_bid, topn_ask) >= thresholds.topN_min_notional
+            if not topn_pass:
+                fail_reasons.append("topn_notional_low")
+
+    return _DepthCriteriaResult(
+        best_bid_notional_pass=best_bid_pass,
+        best_ask_notional_pass=best_ask_pass,
+        unwind_slippage_pass=unwind_slippage_pass,
+        band_10bps_notional_pass=band_10bps_pass,
+        topn_notional_pass=topn_pass,
+        fail_reasons=tuple(fail_reasons),
+    )
 
 
 def run_depth_check(
@@ -245,22 +325,16 @@ def run_depth_check(
         if state.valid_samples == 0:
             fail_reasons.append("no_valid_samples")
 
+        criteria = _evaluate_depth_criteria(
+            aggregates,
+            thresholds=thresholds,
+            depth_cfg=depth_cfg,
+        )
+        fail_reasons.extend(criteria.fail_reasons)
+
         best_bid_median = aggregates["best_bid_notional_median"]
         best_ask_median = aggregates["best_ask_notional_median"]
         unwind_p90 = aggregates["unwind_slippage_p90_bps"]
-
-        if best_bid_median is None or best_ask_median is None:
-            fail_reasons.append("missing_best_level_notional")
-        else:
-            if best_bid_median < thresholds.best_level_min_notional:
-                fail_reasons.append("best_bid_notional_low")
-            if best_ask_median < thresholds.best_level_min_notional:
-                fail_reasons.append("best_ask_notional_low")
-
-        if unwind_p90 is None:
-            fail_reasons.append("missing_unwind_slippage")
-        elif unwind_p90 > thresholds.unwind_slippage_max_bps:
-            fail_reasons.append("unwind_slippage_high")
 
         pass_depth = len(fail_reasons) == 0
 
@@ -279,6 +353,11 @@ def run_depth_check(
                 band_bid_notional_median=aggregates["band_bid_notional_median"],
                 unwind_slippage_p90_bps=unwind_p90,
                 uptime=uptime,
+                best_bid_notional_pass=criteria.best_bid_notional_pass,
+                best_ask_notional_pass=criteria.best_ask_notional_pass,
+                unwind_slippage_pass=criteria.unwind_slippage_pass,
+                band_10bps_notional_pass=criteria.band_10bps_notional_pass,
+                topn_notional_pass=criteria.topn_notional_pass,
                 pass_depth=pass_depth,
                 fail_reasons=tuple(fail_reasons),
             )

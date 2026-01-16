@@ -1,2 +1,2 @@
-symbol,sample_count,valid_samples,empty_book_count,invalid_book_count,symbol_unavailable_count,best_bid_notional_median,best_ask_notional_median,topn_bid_notional_median,topn_ask_notional_median,band_bid_notional_median_5bps,band_bid_notional_median_10bps,band_bid_notional_median_20bps,unwind_slippage_p90_bps,uptime,pass_depth,fail_reasons
-AAAUSDT,3,3,0,0,0,100,110,200,210,50,40,30,10,0.95,true,
+symbol,sample_count,valid_samples,empty_book_count,invalid_book_count,symbol_unavailable_count,best_bid_notional_median,best_ask_notional_median,topn_bid_notional_median,topn_ask_notional_median,band_bid_notional_median_5bps,band_bid_notional_median_10bps,band_bid_notional_median_20bps,unwind_slippage_p90_bps,uptime,best_bid_notional_pass,best_ask_notional_pass,unwind_slippage_pass,band_10bps_notional_pass,topn_notional_pass,pass_depth,depth_fail_reasons
+AAAUSDT,3,3,0,0,0,100,110,200,210,50,40,30,10,0.95,true,true,true,,,true,

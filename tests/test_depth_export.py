@@ -52,6 +52,11 @@ def test_export_depth_outputs(tmp_path: Path) -> None:
             band_bid_notional_median={5: 200.0},
             unwind_slippage_p90_bps=25.0,
             uptime=1.0,
+            best_bid_notional_pass=True,
+            best_ask_notional_pass=True,
+            unwind_slippage_pass=True,
+            band_10bps_notional_pass=None,
+            topn_notional_pass=None,
             pass_depth=True,
             fail_reasons=(),
         )
@@ -99,6 +104,11 @@ def test_export_summary_enriched_handles_missing_band_metrics(tmp_path: Path) ->
             band_bid_notional_median=None,
             unwind_slippage_p90_bps=None,
             uptime=0.0,
+            best_bid_notional_pass=False,
+            best_ask_notional_pass=False,
+            unwind_slippage_pass=False,
+            band_10bps_notional_pass=None,
+            topn_notional_pass=None,
             pass_depth=False,
             fail_reasons=("no_valid_samples",),
         )
