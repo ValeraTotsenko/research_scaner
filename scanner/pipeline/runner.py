@@ -1,3 +1,39 @@
+"""
+Pipeline execution engine with state management, timeouts, and resumability.
+
+This module orchestrates the execution of pipeline stages, handling:
+- Stage execution with per-stage and total timeouts
+- State persistence for crash recovery and resumption
+- Input/output artifact validation
+- Metrics collection and HTTP client lifecycle
+
+Exit Codes:
+    - EXIT_OK (0): Pipeline completed successfully
+    - EXIT_CONFIG_ERROR (2): Invalid configuration or missing stages
+    - EXIT_STAGE_ERROR (3): Stage execution failed
+    - EXIT_VALIDATION_ERROR (4): Artifact validation failed
+
+Resume Behavior:
+    When --resume is set, stages with valid outputs are skipped.
+    When --force is also set, all stages re-run regardless of prior state.
+
+Timeout Handling:
+    - Per-stage timeouts from config.pipeline.stage_timeouts_s
+    - Total pipeline timeout from config.pipeline.total_timeout_s
+    - Grace period added to allow graceful shutdown
+
+Example:
+    >>> exit_code = run_pipeline(
+    ...     run_dir=run_dir,
+    ...     run_id="abc123",
+    ...     config=config,
+    ...     logger=logger,
+    ...     metrics_path=run_dir / "metrics.json",
+    ...     stage_plan=["universe", "spread", "score"],
+    ...     options=PipelineOptions(resume=False, ...),
+    ... )
+"""
+
 from __future__ import annotations
 
 import logging
@@ -30,7 +66,7 @@ from scanner.pipeline.state import (
     write_pipeline_state,
 )
 
-
+# Exit codes for CLI return values
 EXIT_OK = 0
 EXIT_CONFIG_ERROR = 2
 EXIT_STAGE_ERROR = 3
@@ -39,6 +75,17 @@ EXIT_VALIDATION_ERROR = 4
 
 @dataclass(frozen=True)
 class PipelineOptions:
+    """
+    Runtime options for pipeline execution.
+
+    Attributes:
+        resume: If True, skip stages with existing valid outputs.
+        force: If True, re-run stages even if outputs exist.
+        fail_fast: If True, stop on first stage failure.
+        continue_on_error: If True, continue to next stage on failure.
+        dry_run: If True, validate artifacts without execution.
+        artifact_validation: Validation mode ("strict" or "lenient").
+    """
     resume: bool
     force: bool
     fail_fast: bool
@@ -53,6 +100,25 @@ def build_stage_plan(
     stage_from: str | None,
     stage_to: str | None,
 ) -> list[str]:
+    """
+    Build the list of stages to execute based on CLI arguments.
+
+    Supports three modes:
+    1. Explicit stage list via --stages flag
+    2. Range specification via --from and --to flags
+    3. Full pipeline (default) if no flags specified
+
+    Args:
+        selected_stages: Explicit list of stage names to run.
+        stage_from: Starting stage for range mode.
+        stage_to: Ending stage for range mode.
+
+    Returns:
+        List of stage names to execute in order.
+
+    Raises:
+        ValueError: If stage names are invalid or order is wrong.
+    """
     if selected_stages:
         stages = validate_stage_names(selected_stages)
         ensure_stage_order(stages)
@@ -111,6 +177,29 @@ def run_pipeline(
     options: PipelineOptions,
     stage_definitions: Sequence[StageDefinition] | None = None,
 ) -> int:
+    """
+    Execute the pipeline with state management and error handling.
+
+    Main entry point for pipeline execution. Handles:
+    - State creation/loading for resumability
+    - MEXC client lifecycle
+    - Per-stage execution with timeout enforcement
+    - Artifact validation before and after each stage
+    - Metrics collection and flushing
+
+    Args:
+        run_dir: Directory for this run's artifacts.
+        run_id: Unique identifier for this run.
+        config: Full application configuration.
+        logger: Logger for pipeline events.
+        metrics_path: Path to metrics.json for tracking.
+        stage_plan: List of stage names to execute.
+        options: Runtime options (resume, force, dry_run, etc.).
+        stage_definitions: Custom stage definitions (uses defaults if None).
+
+    Returns:
+        Exit code (EXIT_OK, EXIT_CONFIG_ERROR, EXIT_STAGE_ERROR, or EXIT_VALIDATION_ERROR).
+    """
     if options.artifact_validation not in {"strict", "lenient"}:
         log_event(logger, logging.ERROR, "config_invalid", "Invalid artifact_validation mode")
         return EXIT_CONFIG_ERROR
