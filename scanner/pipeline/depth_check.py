@@ -17,6 +17,18 @@ Depth Criteria (PASS_DEPTH requires ALL):
     - best_ask_notional_median >= best_level_min_notional
     - unwind_slippage_p90_bps <= unwind_slippage_max_bps
 
+Depth Uptime Calculation:
+    Depth uptime is calculated as valid_samples / target_ticks, where target_ticks
+    accounts for API rate limiting. With max_rps limit, each tick takes:
+        tick_duration_s = num_symbols / max_rps
+
+    If tick_duration_s > interval_s, the system operates in "effective snapshot mode"
+    and uses: target_ticks = duration_s / tick_duration_s (instead of naive duration/interval).
+
+    Example: 80 symbols at 2 RPS with duration=1200s, interval=30s:
+        - tick_duration = 80/2 = 40s (> 30s interval)
+        - effective_target = 1200/40 = 30 ticks (not naive 1200/30 = 40)
+
 Note:
     Depth uptime is informational only - NOT a pass/fail criterion.
     This differs from spread uptime which is a pass/fail criterion.
@@ -227,7 +239,38 @@ def run_depth_check(
         raise ValueError("No depth candidates provided")
 
     symbol_states = {symbol: _DepthSymbolState(symbol=symbol) for symbol in symbols}
-    target_ticks = max(1, math.ceil(depth_sampling.duration_s / depth_sampling.interval_s))
+
+    # Calculate realistic target_ticks accounting for rate limiting.
+    # With max_rps limit, each full tick (sampling all symbols) takes:
+    #   tick_duration_s = len(symbols) / max_rps
+    # If tick_duration_s > interval_s, we're in "effective snapshot mode"
+    # and can't achieve the naive duration/interval tick count.
+    max_rps = cfg.mexc.max_rps
+    naive_target_ticks = max(1, math.ceil(depth_sampling.duration_s / depth_sampling.interval_s))
+
+    if max_rps > 0 and len(symbols) > 0:
+        tick_duration_s = len(symbols) / max_rps
+        if tick_duration_s > depth_sampling.interval_s:
+            # Effective snapshot mode: can only achieve fewer ticks
+            effective_target_ticks = max(1, int(depth_sampling.duration_s / tick_duration_s))
+            log_event(
+                logger,
+                logging.INFO,
+                "depth_snapshot_mode",
+                "Depth operating in effective snapshot mode due to rate limiting",
+                symbols_count=len(symbols),
+                max_rps=max_rps,
+                tick_duration_s=round(tick_duration_s, 1),
+                interval_s=depth_sampling.interval_s,
+                naive_target_ticks=naive_target_ticks,
+                effective_target_ticks=effective_target_ticks,
+            )
+            target_ticks = effective_target_ticks
+        else:
+            target_ticks = naive_target_ticks
+    else:
+        target_ticks = naive_target_ticks
+
     ticks_success = 0
     ticks_fail = 0
     depth_requests_total = 0
