@@ -26,6 +26,7 @@ Fail Reasons:
     - spread_median_high: Median spread exceeds maximum acceptable threshold
     - spread_p90_low: 90th percentile spread below minimum
     - spread_p90_high: 90th percentile spread exceeds maximum (too volatile)
+    - edge_mm_low: Maker/Maker edge below minimum viable threshold
 
 Note:
     missing_24h_stats is NOT included as a fail reason. Per AD-101, this flag
@@ -232,6 +233,12 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
         if stats.spread_p90_bps > cfg.thresholds.spread.p90_max_bps:
             fail_reasons.append("spread_p90_high")
 
+    # Check edge_mm_bps against minimum threshold
+    # This is the primary profitability criterion for maker/maker operation
+    edge_mm_bps = _edge_mm_bps(stats, cfg)
+    if edge_mm_bps is not None and edge_mm_bps < cfg.thresholds.edge_min_bps:
+        fail_reasons.append("edge_mm_low")
+
     # Note: missing_24h_stats is NOT added to fail_reasons.
     # Per AD-101, this flag is informational only. Symbols with truly missing
     # 24h data are already filtered out in the universe stage. The scoring
@@ -239,7 +246,7 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
     # valid per MEXC docs). The flag is preserved in summary exports for
     # debugging but doesn't affect pass_spread determination.
 
-    edge_mm_bps = _edge_mm_bps(stats, cfg)
+    # Edge metrics are computed above when checking edge_mm_bps threshold
     edge_mm_p25_bps = _edge_mm_p25_bps(stats, cfg)
     edge_mt_bps = _edge_mt_bps(stats, cfg)
     net_edge_bps = _net_edge_bps(stats, cfg)
@@ -261,6 +268,8 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
         and stats.spread_median_bps <= cfg.thresholds.spread.median_max_bps
         and stats.spread_p90_bps >= cfg.thresholds.spread.p90_min_bps
         and stats.spread_p90_bps <= cfg.thresholds.spread.p90_max_bps
+        and edge_mm_bps is not None
+        and edge_mm_bps >= cfg.thresholds.edge_min_bps
     )
 
     return ScoreResult(
