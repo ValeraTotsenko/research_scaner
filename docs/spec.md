@@ -47,31 +47,37 @@ For the sorted spread series:
 
 ## Fees and edge metrics
 
-The system calculates two edge metrics:
+The system calculates three edge metrics:
 
-1. **edge_mm_bps** (Maker/Maker mode - primary metric):
+1. **edge_mm_bps** (Maker/Maker mode - optimistic):
    ```
-   edge_mm_bps = spread_median_bps - 2 × maker_bps - slippage_buffer_bps
+   edge_mm_bps = spread_median_bps - 2 × maker_bps - buffer_bps
    ```
-   This assumes maker fills on both entry and exit (spread-capture strategy).
+   This assumes maker fills on both entry and exit (spread-capture strategy) using median spread.
 
-2. **edge_with_unwind_bps** (Emergency unwind penalty):
+2. **edge_mm_p25_bps** (Maker/Maker mode - pessimistic):
    ```
-   edge_with_unwind_bps = spread_median_bps - (maker_bps + taker_bps) - slippage_buffer_bps
+   edge_mm_p25_bps = spread_p25_bps - 2 × maker_bps - buffer_bps
    ```
-   This represents worst-case forced taker exit.
+   This uses the 25th percentile spread for a more conservative estimate of maker/maker edge.
 
-3. **net_edge_bps** (Primary reporting metric):
+3. **edge_mt_bps** (Maker/Taker mode - emergency unwind):
+   ```
+   edge_mt_bps = spread_median_bps - (maker_bps + taker_bps) - buffer_bps
+   ```
+   This represents worst-case forced taker exit scenario.
+
+4. **net_edge_bps** (Primary reporting metric):
    ```
    net_edge_bps = edge_mm_bps
    ```
-   The net edge uses the maker/maker model as this reflects normal operation.
+   The net edge uses the optimistic maker/maker model as this reflects normal operation.
 
 Defaults:
 
 - `fees.maker_bps = 2.0`
 - `fees.taker_bps = 4.0`
-- `thresholds.slippage_buffer_bps = 2.0`
+- `thresholds.buffer_bps = 2.0` (formerly `slippage_buffer_bps`)
 
 ## PASS/FAIL (PASS_SPREAD)
 
@@ -131,7 +137,17 @@ for stable ties.
 - `spread_p90_bps`
 - `uptime`
 - `quoteVolume_24h`
+- `quoteVolume_24h_raw`
+- `volume_24h_raw`
+- `mid_price`
+- `quoteVolume_24h_est`
+- `quoteVolume_24h_effective`
+- `used_quote_volume_estimate` (boolean: true if estimate was used instead of raw)
 - `trades_24h`
+- `trade_count_missing` (boolean: true if trades_24h is None)
+- `edge_mm_bps`
+- `edge_mm_p25_bps` (new: pessimistic maker/maker edge)
+- `edge_mt_bps` (new: maker/taker edge, formerly edge_with_unwind_bps)
 - `net_edge_bps`
 - `pass_spread`
 - `score`

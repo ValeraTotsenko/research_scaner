@@ -59,16 +59,17 @@ The base operating model assumes **maker fills on both sides** (buy + sell):
 ```
 gross_capture_bps ≈ spread_median_bps
 fees_bps = 2 × maker_fee_bps  (maker on entry + maker on exit)
-edge_mm_bps = spread_median_bps - 2 × maker_fee_bps - slippage_buffer_bps
+edge_mm_bps = spread_median_bps - 2 × maker_fee_bps - buffer_bps
+edge_mm_p25_bps = spread_p25_bps - 2 × maker_fee_bps - buffer_bps  (pessimistic)
 ```
 
 For emergency unwind scenarios (forced taker exit):
 
 ```
-edge_with_unwind_bps = spread_median_bps - (maker_fee_bps + taker_fee_bps) - slippage_buffer_bps
+edge_mt_bps = spread_median_bps - (maker_fee_bps + taker_fee_bps) - buffer_bps
 ```
 
-The **primary metric** for pass/fail is `edge_mm_bps` (maker/maker edge).
+The **primary metric** for pass/fail is `edge_mm_bps` (optimistic maker/maker edge). The `edge_mm_p25_bps` provides a more conservative estimate using P25 spread, while `edge_mt_bps` (formerly `edge_with_unwind_bps`) represents the worst-case taker exit scenario.
 
 ### Business Context
 

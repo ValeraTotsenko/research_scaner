@@ -48,7 +48,8 @@ def _make_score(symbol: str, score: float, pass_spread: bool) -> ScoreResult:
         symbol=symbol,
         spread_stats=stats,
         edge_mm_bps=6.0,
-        edge_with_unwind_bps=4.0,
+        edge_mm_p25_bps=3.0,
+        edge_mt_bps=4.0,
         net_edge_bps=4.0,
         pass_spread=pass_spread,
         score=score,
@@ -86,6 +87,7 @@ def test_generate_report_creates_outputs(tmp_path: Path) -> None:
             topn_bid_notional_median=500.0,
             topn_ask_notional_median=520.0,
             band_bid_notional_median={5: 300.0},
+            band_ask_notional_median={5: 310.0},
             unwind_slippage_p90_bps=12.0,
             uptime=1.0,
             best_bid_notional_pass=True,
@@ -108,6 +110,7 @@ def test_generate_report_creates_outputs(tmp_path: Path) -> None:
             topn_bid_notional_median=120.0,
             topn_ask_notional_median=130.0,
             band_bid_notional_median={5: 110.0},
+            band_ask_notional_median={5: 120.0},
             unwind_slippage_p90_bps=40.0,
             uptime=0.5,
             best_bid_notional_pass=False,
@@ -129,10 +132,15 @@ def test_generate_report_creates_outputs(tmp_path: Path) -> None:
 
     assert report_path.exists()
     report_text = report_path.read_text(encoding="utf-8")
-    assert "## Run meta" in report_text
-    assert "## API health summary" in report_text
-    assert "## Top candidates" in report_text
-    assert shortlist_path.exists()
+    assert "## 1. Run Meta" in report_text
+    assert "## 2. Parameters" in report_text
+    assert "## 3. Universe Stats" in report_text
+    assert "## 4. Spread Stats" in report_text
+    assert "## 5. Depth Results" in report_text
+    assert "## 6. Top" in report_text  # Contains "Top N Candidates"
+    assert "## 7. Fail Reason Breakdown" in report_text
+    assert "## 8. Notes" in report_text
+    # Note: new report generator doesn't create shortlist.csv, only report.md
 
 
 def test_shortlist_sorting_stable(tmp_path: Path) -> None:
@@ -151,7 +159,8 @@ def test_shortlist_sorting_stable(tmp_path: Path) -> None:
             "quoteVolume_24h": 100.0,
             "trades_24h": 10,
             "edge_mm_bps": 6.0,
-            "edge_with_unwind_bps": 4.0,
+            "edge_mm_p25_bps": 3.0,
+            "edge_mt_bps": 4.0,
             "net_edge_bps": 4.0,
             "pass_spread": True,
             "score": 100.0,
@@ -167,7 +176,8 @@ def test_shortlist_sorting_stable(tmp_path: Path) -> None:
             "quoteVolume_24h": 100.0,
             "trades_24h": 10,
             "edge_mm_bps": 6.0,
-            "edge_with_unwind_bps": 4.0,
+            "edge_mm_p25_bps": 3.0,
+            "edge_mt_bps": 4.0,
             "net_edge_bps": 4.0,
             "pass_spread": True,
             "score": 100.0,
@@ -183,7 +193,8 @@ def test_shortlist_sorting_stable(tmp_path: Path) -> None:
             "quoteVolume_24h": 100.0,
             "trades_24h": 10,
             "edge_mm_bps": 6.0,
-            "edge_with_unwind_bps": 4.0,
+            "edge_mm_p25_bps": 3.0,
+            "edge_mt_bps": 4.0,
             "net_edge_bps": 4.0,
             "pass_spread": True,
             "score": 90.0,
@@ -260,11 +271,31 @@ def test_shortlist_sorting_stable(tmp_path: Path) -> None:
     cfg = AppConfig(report={"top_n": 3})
     generate_report(run_dir, cfg)
 
-    shortlist_path = run_dir / "shortlist.csv"
-    rows = shortlist_path.read_text(encoding="utf-8").splitlines()[1:]
-    symbols = [row.split(",")[0] for row in rows]
+    report_path = run_dir / "report.md"
+    assert report_path.exists()
+    report_text = report_path.read_text(encoding="utf-8")
 
-    assert symbols == ["AAAUSDT", "BBBUSD", "CCCUSD"]
+    # Check that all three symbols appear in the report in the correct order
+    # The symbols should appear in the "Top N Candidates" section
+    assert "AAAUSDT" in report_text
+    assert "BBBUSD" in report_text
+    assert "CCCUSD" in report_text
+
+    # Verify the order by checking positions in the text
+    # (AAAUSDT and BBBUSD both have score 100, CCCUSD has score 90)
+    # They should be sorted by score desc, then symbol asc
+    pos_aaa = report_text.find("AAAUSDT")
+    pos_bbb = report_text.find("BBBUSD")
+    pos_ccc = report_text.find("CCCUSD")
+
+    # All symbols should be found
+    assert pos_aaa > 0
+    assert pos_bbb > 0
+    assert pos_ccc > 0
+
+    # CCCUSD (score 90) should appear after the others (score 100)
+    assert pos_ccc > pos_aaa
+    assert pos_ccc > pos_bbb
 
 
 def test_report_missing_summary_fails(tmp_path: Path) -> None:

@@ -23,14 +23,18 @@ def test_score_symbol_edge_formulas() -> None:
     cfg = AppConfig.model_validate(
         {
             "fees": {"maker_bps": 2.0, "taker_bps": 4.0},
-            "thresholds": {"slippage_buffer_bps": 2.0},
+            "thresholds": {"buffer_bps": 2.0},
         }
     )
 
     result = score_symbol(stats, cfg)
 
+    # edge_mm_bps = 10.0 - 2*2.0 - 2.0 = 4.0
     assert result.edge_mm_bps == 4.0
-    assert result.edge_with_unwind_bps == 2.0
+    # edge_mm_p25_bps = 7.0 - 2*2.0 - 2.0 = 1.0
+    assert result.edge_mm_p25_bps == 1.0
+    # edge_mt_bps = 10.0 - (2.0 + 4.0) - 2.0 = 2.0
+    assert result.edge_mt_bps == 2.0
 
 
 def test_export_summary_enriched_applies_edge_min(tmp_path: Path) -> None:
@@ -50,7 +54,8 @@ def test_export_summary_enriched_applies_edge_min(tmp_path: Path) -> None:
         symbol="BTCUSDT",
         spread_stats=stats,
         edge_mm_bps=1.0,
-        edge_with_unwind_bps=1.0,
+        edge_mm_p25_bps=0.5,
+        edge_mt_bps=1.0,
         net_edge_bps=1.0,
         pass_spread=True,
         score=90.0,
@@ -68,6 +73,7 @@ def test_export_summary_enriched_applies_edge_min(tmp_path: Path) -> None:
         topn_bid_notional_median=150.0,
         topn_ask_notional_median=160.0,
         band_bid_notional_median={5: 200.0},
+        band_ask_notional_median={5: 210.0},
         unwind_slippage_p90_bps=25.0,
         uptime=1.0,
         best_bid_notional_pass=True,
