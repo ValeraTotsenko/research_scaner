@@ -1,13 +1,13 @@
 mexc:
   base_url: https://api.mexc.com
   timeout_s: 10
-  max_retries: 3
+  max_retries: 5
   backoff_base_s: 0.5
-  backoff_max_s: 4
-  max_rps: 1.0
+  backoff_max_s: 8
+  max_rps: 1.2  # консервативно, чтобы реже ловить 429
 
 runtime:
-  run_name: "smoke"
+  run_name: "fast_smoke_sanity"
   timezone: "UTC"
 
 obs:
@@ -16,26 +16,26 @@ obs:
 universe:
   quote_asset: "USDT"
   allowed_exchange_status: ["1"]
-  min_quote_volume_24h: 100000
-  min_trades_24h: 100
+  min_quote_volume_24h: 500000
+  min_trades_24h: 500
   use_quote_volume_estimate: true
   require_trade_count: false
-  blacklist_regex: []
+  blacklist_regex: ["ONUSDT$"]   # отсечь нецелевой класс инструментов
   whitelist: []
 
 sampling:
   spread:
-    duration_s: 120
-    interval_s: 5
-    min_uptime: 0.9
+    duration_s: 180
+    interval_s: 3
+    min_uptime: 0.95
     allow_per_symbol: false
-    per_symbol_limit: 40
+    per_symbol_limit: 80
 
   depth:
-    duration_s: 120
+    duration_s: 180
     interval_s: 30
     limit: 50
-    candidates_limit: 80
+    candidates_limit: 30   # важно: успеваем собирать сэмплы при max_rps≈1.2
 
   raw:
     enabled: true
@@ -44,13 +44,17 @@ sampling:
 thresholds:
   spread:
     median_min_bps: 8.0
-    median_max_bps: 15.0
+    median_max_bps: 25.0
     p90_min_bps: 0.0
-    p90_max_bps: 45.0
+    p90_max_bps: 80.0
+
   depth:
-    best_level_min_notional: 200.0
+    best_level_min_notional: 80.0
     unwind_slippage_max_bps: 35.0
-  uptime_min: 0.9
+
+  uptime_min: 0.95
+  edge_min_bps: 2.0
+  buffer_bps: 2.0
 
 fees:
   taker_bps: 4.0
@@ -59,10 +63,10 @@ fees:
 depth:
   top_n_levels: 10
   band_bps: [5, 10]
-  stress_notional_usdt: 100.0
+  stress_notional_usdt: 50.0
 
 report:
-  top_n: 20
+  top_n: 30
   include_raw_in_bundle: false
 
 pipeline:
@@ -73,11 +77,11 @@ pipeline:
   total_timeout_s: 600
 
   stage_timeouts_s:
-    universe: 60
-    spread: 180
-    score: 60
-    depth: 180
-    report: 60
+    universe: 90
+    spread: 240
+    score: 90
+    depth: 300
+    report: 90
 
   timeout_behavior: "partial_success"
   timeout_grace_s: 2
