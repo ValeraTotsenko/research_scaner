@@ -1,3 +1,27 @@
+"""
+Depth check stage implementation for order book liquidity analysis.
+
+This module implements the depth stage of the pipeline, which:
+1. Selects top candidates from spread scoring results
+2. Samples order book depth at regular intervals
+3. Computes aggregated liquidity metrics per symbol
+4. Evaluates pass/fail criteria for depth thresholds
+5. Exports depth_metrics.csv and summary_enriched.csv
+
+Candidate Selection:
+    Candidates are sorted by score (descending) and filtered to
+    symbols that passed spread criteria. Limited by candidates_limit.
+
+Depth Criteria (PASS_DEPTH requires ALL):
+    - best_bid_notional_median >= best_level_min_notional
+    - best_ask_notional_median >= best_level_min_notional
+    - unwind_slippage_p90_bps <= unwind_slippage_max_bps
+
+Note:
+    Depth uptime is informational only - NOT a pass/fail criterion.
+    This differs from spread uptime which is a pass/fail criterion.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +42,7 @@ from scanner.obs.logging import log_event
 
 @dataclass
 class _DepthSymbolState:
+    """Internal mutable state for tracking depth samples per symbol."""
     symbol: str
     snapshots: list = field(default_factory=list)
     sample_count: int = 0
@@ -151,6 +176,26 @@ def run_depth_check(
     *,
     deadline_ts: float | None = None,
 ) -> DepthCheckResult:
+    """
+    Execute depth check stage: sample order books and evaluate liquidity.
+
+    Main entry point for the depth stage. Samples order book depth for
+    top-scoring candidates, computes aggregated metrics, evaluates
+    pass/fail criteria, and exports results.
+
+    Args:
+        client: MexcClient instance for API calls.
+        candidates: ScoreResult list from scoring stage (or symbol strings).
+        cfg: Application config with depth thresholds and sampling params.
+        out_dir: Output directory for depth_metrics.csv.
+        deadline_ts: Optional Unix timestamp deadline for timeout.
+
+    Returns:
+        DepthCheckResult with per-symbol metrics and aggregate statistics.
+
+    Raises:
+        ValueError: If sampling parameters invalid or no candidates.
+    """
     logger = logging.getLogger(__name__)
     depth_sampling = cfg.sampling.depth
     depth_cfg = cfg.depth

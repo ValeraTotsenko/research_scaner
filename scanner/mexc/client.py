@@ -1,3 +1,38 @@
+"""
+MEXC Exchange API client with rate limiting, retries, and observability.
+
+This module provides a resilient HTTP client for interacting with the MEXC
+cryptocurrency exchange API. It implements:
+
+- **Rate Limiting**: Token bucket algorithm to respect API rate limits
+- **Retry Logic**: Exponential backoff with jitter for transient failures
+- **Error Classification**: Differentiates between retryable and fatal errors
+- **Metrics Collection**: Tracks request counts, latencies, and retry reasons
+
+Error Handling Strategy:
+    - HTTP 429 (Rate Limited): Retry with backoff, mark run as degraded
+    - HTTP 403 (WAF Limited): Retry with backoff, mark run as degraded
+    - HTTP 5xx (Server Error): Retry with backoff
+    - HTTP 4xx (Client Error): Fail immediately (except 403, 429)
+    - Timeouts/Connection Errors: Retry with backoff
+
+API Endpoints Used:
+    - /api/v3/exchangeInfo: Trading pair metadata and rules
+    - /api/v3/defaultSymbols: Curated list of active symbols
+    - /api/v3/ticker/24hr: 24-hour price and volume statistics
+    - /api/v3/ticker/bookTicker: Current best bid/ask prices
+    - /api/v3/depth: Order book depth data
+
+Example:
+    >>> from scanner.config import MexcConfig
+    >>> client = MexcClient(MexcConfig(max_rps=5))
+    >>> try:
+    ...     info = client.get_exchange_info()
+    ...     symbols = [s["symbol"] for s in info["symbols"]]
+    ... finally:
+    ...     client.close()
+"""
+
 from __future__ import annotations
 
 import json
@@ -18,19 +53,48 @@ from scanner.obs.logging import log_event
 
 @dataclass
 class MexcMetrics:
+    """
+    Metrics collector for MEXC API client operations.
+
+    Tracks HTTP request counts by endpoint/status, retry counts by reason,
+    and latency measurements for performance monitoring.
+
+    Attributes:
+        http_requests_total: Counter dict keyed by (endpoint, status_code).
+        http_retries_total: Counter dict keyed by (endpoint, retry_reason).
+        http_latency_ms: List of latencies per endpoint for histogram analysis.
+    """
     http_requests_total: dict[tuple[str, str], int] = field(default_factory=lambda: defaultdict(int))
     http_retries_total: dict[tuple[str, str], int] = field(default_factory=lambda: defaultdict(int))
     http_latency_ms: dict[str, list[float]] = field(default_factory=lambda: defaultdict(list))
 
     def record_request(self, endpoint: str, status: str, latency_ms: float) -> None:
+        """Record a completed HTTP request with its status and latency."""
         self.http_requests_total[(endpoint, status)] += 1
         self.http_latency_ms[endpoint].append(latency_ms)
 
     def record_retry(self, endpoint: str, reason: str) -> None:
+        """Record a retry attempt with the reason (rate_limited, timeout, etc.)."""
         self.http_retries_total[(endpoint, reason)] += 1
 
 
 class MexcClient:
+    """
+    Resilient HTTP client for MEXC Exchange API with built-in rate limiting.
+
+    Handles all communication with MEXC REST API, including:
+    - Automatic rate limiting via token bucket
+    - Exponential backoff with jitter on failures
+    - Error classification and appropriate retry behavior
+    - Request/response logging and metrics collection
+
+    The client should be used as a context manager or explicitly closed
+    to release HTTP connection resources.
+
+    Attributes:
+        metrics: MexcMetrics instance with request/retry/latency data.
+    """
+
     def __init__(
         self,
         config: MexcConfig,
@@ -40,6 +104,16 @@ class MexcClient:
         transport: httpx.BaseTransport | None = None,
         rate_limiter: TokenBucket | None = None,
     ) -> None:
+        """
+        Initialize MEXC API client with configuration.
+
+        Args:
+            config: MexcConfig with base_url, timeout, retry, and rate limit settings.
+            logger: Optional logger for request/error logging.
+            run_id: Optional run identifier for log correlation.
+            transport: Optional custom httpx transport (for testing).
+            rate_limiter: Optional custom rate limiter (default: TokenBucket).
+        """
         self._config = config
         self._logger = logger or logging.getLogger(__name__)
         self._run_id = run_id or "n/a"
@@ -55,18 +129,38 @@ class MexcClient:
 
     @property
     def metrics(self) -> MexcMetrics:
+        """Access collected HTTP metrics for this client instance."""
         return self._metrics
 
     def close(self) -> None:
+        """Close the underlying HTTP client and release connections."""
         self._client.close()
 
     def get_exchange_info(self) -> dict:
+        """
+        Fetch exchange trading rules and symbol information.
+
+        Returns:
+            Dict containing 'symbols' list with trading pair metadata.
+
+        Raises:
+            FatalHttpError: If response is not a dict.
+        """
         payload = self._request("GET", "/api/v3/exchangeInfo")
         if not isinstance(payload, dict):
             raise FatalHttpError("exchangeInfo response must be a dict", payload=payload)
         return payload
 
     def get_default_symbols(self) -> list[str]:
+        """
+        Fetch curated list of default/active trading symbols.
+
+        Returns:
+            List of symbol strings (e.g., ["BTCUSDT", "ETHUSDT"]).
+
+        Raises:
+            FatalHttpError: If response cannot be coerced to symbol list.
+        """
         payload = self._request("GET", "/api/v3/defaultSymbols")
         symbols = self._coerce_symbol_list(payload)
         if symbols is None:
@@ -74,24 +168,67 @@ class MexcClient:
         return symbols
 
     def get_ticker_24hr(self) -> list[dict]:
+        """
+        Fetch 24-hour price change statistics for all symbols.
+
+        Returns:
+            List of dicts with volume, price change, and trade count data.
+
+        Raises:
+            FatalHttpError: If response format is invalid.
+        """
         payload = self._request("GET", "/api/v3/ticker/24hr")
         if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
             raise FatalHttpError("ticker/24hr response must be a list of objects", payload=payload)
         return payload
 
     def get_book_ticker(self) -> list[dict]:
+        """
+        Fetch best bid/ask prices for all symbols.
+
+        Returns:
+            List of dicts with symbol, bidPrice, bidQty, askPrice, askQty.
+
+        Raises:
+            FatalHttpError: If response format is invalid.
+        """
         payload = self._request("GET", "/api/v3/ticker/bookTicker")
         if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
             raise FatalHttpError("bookTicker response must be a list of objects", payload=payload)
         return payload
 
     def get_book_ticker_symbol(self, symbol: str) -> dict:
+        """
+        Fetch best bid/ask prices for a single symbol.
+
+        Args:
+            symbol: Trading pair (e.g., "BTCUSDT").
+
+        Returns:
+            Dict with bidPrice, bidQty, askPrice, askQty.
+
+        Raises:
+            FatalHttpError: If response format is invalid.
+        """
         payload = self._request("GET", "/api/v3/ticker/bookTicker", params={"symbol": symbol})
         if not isinstance(payload, dict):
             raise FatalHttpError("bookTicker symbol response must be a dict", payload=payload)
         return payload
 
     def get_depth(self, symbol: str, limit: int) -> dict:
+        """
+        Fetch order book depth for a symbol.
+
+        Args:
+            symbol: Trading pair (e.g., "BTCUSDT").
+            limit: Number of price levels to fetch (max 5000).
+
+        Returns:
+            Dict with 'bids' and 'asks' arrays of [price, quantity] levels.
+
+        Raises:
+            FatalHttpError: If response format is invalid.
+        """
         payload = self._request("GET", "/api/v3/depth", params={"symbol": symbol, "limit": limit})
         if not isinstance(payload, dict):
             raise FatalHttpError("depth response must be a dict", payload=payload)
