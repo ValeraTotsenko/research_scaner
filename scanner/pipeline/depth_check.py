@@ -439,6 +439,7 @@ def run_depth_check(
                 topn_bid_notional_median=aggregates["topn_bid_notional_median"],
                 topn_ask_notional_median=aggregates["topn_ask_notional_median"],
                 band_bid_notional_median=aggregates["band_bid_notional_median"],
+                band_ask_notional_median=aggregates["band_ask_notional_median"],
                 unwind_slippage_p90_bps=unwind_p90,
                 uptime=uptime,
                 best_bid_notional_pass=criteria.best_bid_notional_pass,

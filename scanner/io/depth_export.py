@@ -17,8 +17,12 @@ class DepthExportPaths:
     summary_enriched_path: Path | None
 
 
-def _band_columns(band_bps: Iterable[int]) -> list[str]:
+def _band_bid_columns(band_bps: Iterable[int]) -> list[str]:
     return [f"band_bid_notional_median_{band}bps" for band in band_bps]
+
+
+def _band_ask_columns(band_bps: Iterable[int]) -> list[str]:
+    return [f"band_ask_notional_median_{band}bps" for band in band_bps]
 
 
 def export_depth_metrics(
@@ -54,7 +58,13 @@ def export_depth_metrics(
         "pass_depth",
         "depth_fail_reasons",
     ]
-    columns = columns[:10] + _band_columns(band_bps) + columns[10:]
+    # Insert band columns after topn_ask_notional_median
+    columns = (
+        columns[:10]
+        + _band_bid_columns(band_bps)
+        + _band_ask_columns(band_bps)
+        + columns[10:]
+    )
 
     current_symbol: str | None = None
     row_idx: int | None = None
@@ -64,7 +74,8 @@ def export_depth_metrics(
             writer.writeheader()
             for row_idx, result in enumerate(sorted(results, key=lambda item: item.symbol), start=1):
                 current_symbol = result.symbol
-                band_payload = result.band_bid_notional_median or {}
+                band_bid_payload = result.band_bid_notional_median or {}
+                band_ask_payload = result.band_ask_notional_median or {}
                 row = {
                     "symbol": result.symbol,
                     "sample_count": result.sample_count,
@@ -89,7 +100,8 @@ def export_depth_metrics(
                     "depth_fail_reasons": ";".join(result.fail_reasons),
                 }
                 for band in band_bps:
-                    row[f"band_bid_notional_median_{band}bps"] = band_payload.get(band, "")
+                    row[f"band_bid_notional_median_{band}bps"] = band_bid_payload.get(band, "")
+                    row[f"band_ask_notional_median_{band}bps"] = band_ask_payload.get(band, "")
                 writer.writerow(row)
                 if progress_every > 0 and row_idx % progress_every == 0:
                     log_event(
@@ -147,7 +159,7 @@ def export_summary_enriched(
         "topn_bid_notional_median",
         "topn_ask_notional_median",
         "unwind_slippage_p90_bps",
-    ] + _band_columns(band_bps) + [
+    ] + _band_bid_columns(band_bps) + _band_ask_columns(band_bps) + [
         "depth_fail_reasons",
     ]
 
@@ -192,9 +204,11 @@ def export_summary_enriched(
                     "unwind_slippage_p90_bps": depth.unwind_slippage_p90_bps if depth else "",
                     "depth_fail_reasons": ";".join(depth.fail_reasons) if depth else "no_depth_data",
                 }
-                band_payload = (depth.band_bid_notional_median or {}) if depth else {}
+                band_bid_payload = (depth.band_bid_notional_median or {}) if depth else {}
+                band_ask_payload = (depth.band_ask_notional_median or {}) if depth else {}
                 for band in band_bps:
-                    row[f"band_bid_notional_median_{band}bps"] = band_payload.get(band, "")
+                    row[f"band_bid_notional_median_{band}bps"] = band_bid_payload.get(band, "")
+                    row[f"band_ask_notional_median_{band}bps"] = band_ask_payload.get(band, "")
                 writer.writerow(row)
                 if progress_every > 0 and row_idx % progress_every == 0:
                     log_event(

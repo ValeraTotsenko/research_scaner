@@ -29,7 +29,8 @@ class DepthSymbolMetrics:
         best_ask_notional_median: Median best ask liquidity (USDT).
         topn_bid_notional_median: Median top-N bid liquidity.
         topn_ask_notional_median: Median top-N ask liquidity.
-        band_bid_notional_median: Dict of band_bps -> median notional.
+        band_bid_notional_median: Dict of band_bps -> median notional (bid side).
+        band_ask_notional_median: Dict of band_bps -> median notional (ask side).
         unwind_slippage_p90_bps: 90th percentile unwind slippage.
         uptime: Ratio of valid_samples to sample_count.
         best_bid_notional_pass: True if bid liquidity meets threshold.
@@ -51,6 +52,7 @@ class DepthSymbolMetrics:
     topn_bid_notional_median: float | None
     topn_ask_notional_median: float | None
     band_bid_notional_median: dict[int, float]
+    band_ask_notional_median: dict[int, float]
     unwind_slippage_p90_bps: float | None
     uptime: float
     best_bid_notional_pass: bool

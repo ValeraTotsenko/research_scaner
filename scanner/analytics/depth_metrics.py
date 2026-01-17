@@ -46,7 +46,8 @@ class DepthSnapshotMetrics:
         best_ask_notional: Notional value at best ask (price × quantity).
         topn_bid_notional: Cumulative bid notional across top N levels.
         topn_ask_notional: Cumulative ask notional across top N levels.
-        band_bid_notional: Dict mapping band_bps -> notional within that band.
+        band_bid_notional: Dict mapping band_bps -> notional within that band (bid side).
+        band_ask_notional: Dict mapping band_bps -> notional within that band (ask side).
         unwind_slippage_bps: Estimated slippage for stress_notional sell, or None
             if insufficient liquidity to complete the simulated trade.
     """
@@ -55,6 +56,7 @@ class DepthSnapshotMetrics:
     topn_bid_notional: float
     topn_ask_notional: float
     band_bid_notional: dict[int, float]
+    band_ask_notional: dict[int, float]
     unwind_slippage_bps: float | None
 
 
@@ -182,13 +184,19 @@ def compute_snapshot_metrics(
 
     # Band-based liquidity: sum notional within X bps of mid
     band_bid_notional: dict[int, float] = {}
+    band_ask_notional: dict[int, float] = {}
     for band in band_bps:
         if band <= 0:
             raise ValueError("band_bps values must be positive")
-        # Threshold is mid price minus band percentage
-        threshold = mid * (1 - band / 10_000)
+        # Bid side: threshold is mid price minus band percentage
+        bid_threshold = mid * (1 - band / 10_000)
         band_bid_notional[band] = sum(
-            price * qty for price, qty in bids if price >= threshold
+            price * qty for price, qty in bids if price >= bid_threshold
+        )
+        # Ask side: threshold is mid price plus band percentage
+        ask_threshold = mid * (1 + band / 10_000)
+        band_ask_notional[band] = sum(
+            price * qty for price, qty in asks if price <= ask_threshold
         )
 
     # Slippage estimation for emergency unwind
@@ -202,6 +210,7 @@ def compute_snapshot_metrics(
         topn_bid_notional=topn_bid_notional,
         topn_ask_notional=topn_ask_notional,
         band_bid_notional=band_bid_notional,
+        band_ask_notional=band_ask_notional,
         unwind_slippage_bps=unwind_slippage_bps,
     )
 
@@ -295,7 +304,8 @@ def aggregate_depth_metrics(
         - best_ask_notional_median: Median best ask liquidity
         - topn_bid_notional_median: Median top-N bid liquidity
         - topn_ask_notional_median: Median top-N ask liquidity
-        - band_bid_notional_median: Dict of band -> median notional
+        - band_bid_notional_median: Dict of band -> median notional (bid side)
+        - band_ask_notional_median: Dict of band -> median notional (ask side)
         - unwind_slippage_p90_bps: 90th percentile slippage (worst case)
 
     Note:
@@ -309,6 +319,7 @@ def aggregate_depth_metrics(
             "topn_bid_notional_median": None,
             "topn_ask_notional_median": None,
             "band_bid_notional_median": {},
+            "band_ask_notional_median": {},
             "unwind_slippage_p90_bps": None,
         }
 
@@ -320,11 +331,14 @@ def aggregate_depth_metrics(
     # Only include valid slippage values (None indicates insufficient liquidity)
     slippage = [snap.unwind_slippage_bps for snap in snapshots if snap.unwind_slippage_bps is not None]
 
-    # Compute median band notional for each band
-    band_medians: dict[int, float] = {}
+    # Compute median band notional for each band (both bid and ask sides)
+    band_bid_medians: dict[int, float] = {}
+    band_ask_medians: dict[int, float] = {}
     for band in band_bps:
-        band_values = [snap.band_bid_notional.get(band, 0.0) for snap in snapshots]
-        band_medians[band] = statistics.median(band_values)
+        bid_values = [snap.band_bid_notional.get(band, 0.0) for snap in snapshots]
+        ask_values = [snap.band_ask_notional.get(band, 0.0) for snap in snapshots]
+        band_bid_medians[band] = statistics.median(bid_values)
+        band_ask_medians[band] = statistics.median(ask_values)
 
     # P90 slippage represents worst-case (90th percentile) scenario
     slippage_p90 = None
@@ -337,6 +351,7 @@ def aggregate_depth_metrics(
         "best_ask_notional_median": statistics.median(best_ask),
         "topn_bid_notional_median": statistics.median(topn_bid),
         "topn_ask_notional_median": statistics.median(topn_ask),
-        "band_bid_notional_median": band_medians,
+        "band_bid_notional_median": band_bid_medians,
+        "band_ask_notional_median": band_ask_medians,
         "unwind_slippage_p90_bps": slippage_p90,
     }

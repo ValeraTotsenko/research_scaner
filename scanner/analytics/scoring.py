@@ -7,10 +7,13 @@ which symbols pass the spread criteria and calculates the net edge metrics.
 
 Key Concepts:
     - **Edge MM (Maker/Maker)**: Expected profit assuming maker fills on both sides.
-      Formula: spread_median_bps - 2 × maker_fee_bps - slippage_buffer_bps
+      Formula: spread_median_bps - 2 × maker_fee_bps - buffer_bps
 
-    - **Edge with Unwind**: Expected profit with emergency taker exit.
-      Formula: spread_median_bps - (maker_fee_bps + taker_fee_bps) - slippage_buffer_bps
+    - **Edge MM P25 (Pessimistic Maker/Maker)**: Conservative edge using P25 spread.
+      Formula: spread_p25_bps - 2 × maker_fee_bps - buffer_bps
+
+    - **Edge MT (Maker/Taker)**: Expected profit with emergency taker exit.
+      Formula: spread_median_bps - (maker_fee_bps + taker_fee_bps) - buffer_bps
 
     - **Score**: Composite ranking metric combining edge, uptime, and volatility penalty.
       Formula: max(edge_mm_bps, 0) + uptime × 100 - volatility_penalty
@@ -33,7 +36,8 @@ Example:
     >>> stats = compute_spread_stats(samples)
     >>> result = score_symbol(stats, config)
     >>> if result.pass_spread:
-    ...     print(f"{result.symbol}: edge={result.edge_mm_bps:.2f} bps")
+    ...     print(f"{result.symbol}: edge_mm={result.edge_mm_bps:.2f} bps, "
+    ...           f"edge_mm_p25={result.edge_mm_p25_bps:.2f} bps")
 """
 
 from __future__ import annotations
@@ -59,7 +63,8 @@ class ScoreResult:
         symbol: Trading pair identifier (e.g., "BTCUSDT").
         spread_stats: Source spread statistics used for scoring.
         edge_mm_bps: Maker/Maker edge in basis points (None if insufficient data).
-        edge_with_unwind_bps: Edge with taker unwind in basis points.
+        edge_mm_p25_bps: Pessimistic Maker/Maker edge using P25 spread.
+        edge_mt_bps: Maker/Taker edge for emergency unwind scenarios.
         net_edge_bps: Primary edge metric (currently equals edge_mm_bps).
         pass_spread: True if symbol meets all spread criteria.
         score: Composite ranking score for prioritization.
@@ -68,7 +73,8 @@ class ScoreResult:
     symbol: str
     spread_stats: SpreadStats
     edge_mm_bps: float | None
-    edge_with_unwind_bps: float | None
+    edge_mm_p25_bps: float | None
+    edge_mt_bps: float | None
     net_edge_bps: float | None
     pass_spread: bool
     score: float
@@ -84,13 +90,13 @@ def _edge_mm_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
 
     Args:
         stats: Spread statistics containing median spread value.
-        cfg: Application config with fee structure and slippage buffer.
+        cfg: Application config with fee structure and buffer.
 
     Returns:
         Edge in basis points, or None if spread_median_bps is unavailable.
 
     Formula:
-        edge_mm = spread_median - (2 × maker_fee) - slippage_buffer
+        edge_mm = spread_median - (2 × maker_fee) - buffer
     """
     if stats.spread_median_bps is None:
         return None
@@ -98,26 +104,26 @@ def _edge_mm_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
     return (
         stats.spread_median_bps
         - 2 * cfg.fees.maker_bps
-        - cfg.thresholds.slippage_buffer_bps
+        - cfg.thresholds.buffer_bps
     )
 
 
-def _edge_with_unwind_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
+def _edge_mt_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
     """
-    Calculate edge for emergency unwind scenario with forced taker exit.
+    Calculate maker/taker edge for emergency unwind scenario.
 
-    This represents the worst-case edge when position must be closed immediately
-    via market order (taker) instead of waiting for passive fill.
+    This represents the edge when position is entered as maker but must be
+    closed immediately via market order (taker) instead of waiting for passive fill.
 
     Args:
         stats: Spread statistics containing median spread value.
-        cfg: Application config with fee structure and slippage buffer.
+        cfg: Application config with fee structure and buffer.
 
     Returns:
         Edge in basis points, or None if spread_median_bps is unavailable.
 
     Formula:
-        edge_unwind = spread_median - (maker_fee + taker_fee) - slippage_buffer
+        edge_mt = spread_median - (maker_fee + taker_fee) - buffer
     """
     if stats.spread_median_bps is None:
         return None
@@ -125,7 +131,34 @@ def _edge_with_unwind_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
     return (
         stats.spread_median_bps
         - (cfg.fees.maker_bps + cfg.fees.taker_bps)
-        - cfg.thresholds.slippage_buffer_bps
+        - cfg.thresholds.buffer_bps
+    )
+
+
+def _edge_mm_p25_bps(stats: SpreadStats, cfg: AppConfig) -> float | None:
+    """
+    Calculate pessimistic maker/maker edge using P25 spread instead of median.
+
+    This provides a conservative edge estimate based on the 25th percentile
+    spread, useful for worst-case scenario planning and risk assessment.
+
+    Args:
+        stats: Spread statistics containing P25 spread value.
+        cfg: Application config with fee structure and buffer.
+
+    Returns:
+        Edge in basis points, or None if spread_p25_bps is unavailable.
+
+    Formula:
+        edge_mm_p25 = spread_p25 - (2 × maker_fee) - buffer
+    """
+    if stats.spread_p25_bps is None:
+        return None
+    # Same as edge_mm but using P25 (more conservative)
+    return (
+        stats.spread_p25_bps
+        - 2 * cfg.fees.maker_bps
+        - cfg.thresholds.buffer_bps
     )
 
 
@@ -207,7 +240,8 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
     # debugging but doesn't affect pass_spread determination.
 
     edge_mm_bps = _edge_mm_bps(stats, cfg)
-    edge_with_unwind_bps = _edge_with_unwind_bps(stats, cfg)
+    edge_mm_p25_bps = _edge_mm_p25_bps(stats, cfg)
+    edge_mt_bps = _edge_mt_bps(stats, cfg)
     net_edge_bps = _net_edge_bps(stats, cfg)
 
     volatility_penalty = 0.0
@@ -233,7 +267,8 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
         symbol=symbol,
         spread_stats=stats,
         edge_mm_bps=edge_mm_bps,
-        edge_with_unwind_bps=edge_with_unwind_bps,
+        edge_mm_p25_bps=edge_mm_p25_bps,
+        edge_mt_bps=edge_mt_bps,
         net_edge_bps=net_edge_bps,
         pass_spread=pass_spread,
         score=score,
