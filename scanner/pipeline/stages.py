@@ -1,3 +1,41 @@
+"""
+Pipeline stage definitions and execution logic.
+
+This module defines the five-stage pipeline for spread feasibility research:
+    universe → spread → score → depth → report
+
+Each stage is encapsulated in a StageDefinition that specifies:
+- Input/output artifact dependencies
+- Execution function
+- Input/output validation functions
+
+Stage Flow:
+    1. **universe**: Fetch and filter MEXC trading pairs by quote asset and volume
+    2. **spread**: Sample bid-ask spreads at regular intervals
+    3. **score**: Compute spread statistics, edge metrics, and pass/fail status
+    4. **depth**: Analyze order book depth and slippage for candidates
+    5. **report**: Generate human-readable markdown report and shortlist
+
+Artifact Dependencies:
+    universe → universe.json, universe_rejects.csv
+    spread   → raw_bookticker.jsonl[.gz]
+    score    → summary.csv, summary.json
+    depth    → depth_metrics.csv, summary_enriched.csv
+    report   → report.md, shortlist.csv
+
+The pipeline supports:
+- Resumability via pipeline_state.json
+- Stage subset execution (--from/--to flags)
+- Input/output validation (strict/lenient modes)
+- Deadline-based timeouts per stage
+
+Example:
+    >>> stages = default_stage_definitions(config)
+    >>> for stage in stages:
+    ...     if stage.name == "universe":
+    ...         result = stage.run(context)
+"""
+
 from __future__ import annotations
 
 import gzip
@@ -28,11 +66,24 @@ from scanner.validation.artifacts import (
     validate_universe,
 )
 
+# Canonical order of pipeline stages - defines execution sequence and dependencies
 STAGE_ORDER = ["universe", "spread", "score", "depth", "report"]
 
 
 @dataclass(frozen=True)
 class StageContext:
+    """
+    Immutable context passed to each stage during execution.
+
+    Attributes:
+        run_dir: Directory for this run's artifacts.
+        config: Full application configuration.
+        logger: Logger instance for stage events.
+        client: MEXC API client (None for offline stages).
+        metrics_path: Path to metrics.json for API tracking.
+        artifact_validation: Validation mode ("strict" or "lenient").
+        stage_deadline_ts: Unix timestamp deadline for stage timeout.
+    """
     run_dir: Path
     config: AppConfig
     logger: logging.Logger
@@ -44,6 +95,17 @@ class StageContext:
 
 @dataclass(frozen=True)
 class StageDefinition:
+    """
+    Definition of a pipeline stage with execution and validation logic.
+
+    Attributes:
+        name: Stage identifier (e.g., "universe", "spread").
+        inputs: Tuple of required input artifact filenames.
+        outputs: Tuple of output artifact filenames produced.
+        run: Execution function taking StageContext, returning metrics dict.
+        validate_inputs: Function to validate input artifacts exist/valid.
+        validate_outputs: Function to validate output artifacts after run.
+    """
     name: str
     inputs: tuple[str, ...]
     outputs: tuple[str, ...]
@@ -53,14 +115,17 @@ class StageDefinition:
 
 
 def _is_strict(ctx: StageContext) -> bool:
+    """Check if artifact validation mode is strict."""
     return ctx.artifact_validation == "strict"
 
 
 def _load_json(path: Path) -> object:
+    """Load and parse JSON file, returning parsed object."""
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _parse_float(value: object) -> float | None:
+    """Safely parse value to float, returning None on failure."""
     if value is None:
         return None
     try:
@@ -70,6 +135,7 @@ def _parse_float(value: object) -> float | None:
 
 
 def _parse_int(value: object) -> int | None:
+    """Safely parse value to int (via float), returning None on failure."""
     if value is None:
         return None
     try:
@@ -79,15 +145,29 @@ def _parse_int(value: object) -> int | None:
 
 
 def _raw_bookticker_name(cfg: AppConfig) -> str:
+    """Get raw bookticker filename based on gzip setting."""
     suffix = "jsonl.gz" if cfg.sampling.raw.gzip else "jsonl"
     return f"raw_bookticker.{suffix}"
 
 
 def _raw_bookticker_path(run_dir: Path, cfg: AppConfig) -> Path:
+    """Get full path to raw bookticker file in run directory."""
     return run_dir / _raw_bookticker_name(cfg)
 
 
 def _load_universe_symbols(run_dir: Path) -> list[str]:
+    """
+    Load list of symbols from universe.json artifact.
+
+    Args:
+        run_dir: Run directory containing universe.json.
+
+    Returns:
+        List of symbol strings from the universe.
+
+    Raises:
+        ValueError: If universe.json format is invalid.
+    """
     universe_path = run_dir / "universe.json"
     payload = _load_json(universe_path)
     if not isinstance(payload, dict):
@@ -99,6 +179,7 @@ def _load_universe_symbols(run_dir: Path) -> list[str]:
 
 
 def _empty_spread_stats(symbol: str) -> SpreadStats:
+    """Create SpreadStats with all fields empty/zeroed for missing data."""
     return SpreadStats(
         symbol=symbol,
         sample_count=0,
@@ -135,6 +216,27 @@ def _enrich_spread_stats(
     missing_24h_stats: bool,
     missing_24h_reason: str | None,
 ) -> SpreadStats:
+    """
+    Create new SpreadStats with 24-hour market data added.
+
+    Takes existing spread statistics and enriches them with 24-hour
+    volume and trade count data from the ticker API.
+
+    Args:
+        stats: Base SpreadStats with spread metrics.
+        quote_volume_24h: Quote volume for filtering.
+        quote_volume_24h_raw: Raw quoteVolume from API.
+        volume_24h_raw: Raw volume from API.
+        mid_price: Current mid price.
+        quote_volume_24h_est: Estimated quote volume.
+        quote_volume_24h_effective: Final effective quote volume.
+        trades_24h: Trade count in 24 hours.
+        missing_24h_stats: Whether 24h data is missing.
+        missing_24h_reason: Reason for missing data.
+
+    Returns:
+        New SpreadStats instance with enriched fields.
+    """
     return SpreadStats(
         symbol=stats.symbol,
         sample_count=stats.sample_count,
@@ -159,8 +261,22 @@ def _enrich_spread_stats(
 
 
 def _read_spread_samples(raw_path: Path, symbols: Iterable[str]) -> dict[str, list[SpreadSample]]:
+    """
+    Read raw bookticker JSONL file and extract spread samples per symbol.
+
+    Parses the raw_bookticker.jsonl[.gz] file and groups valid bid/ask
+    samples by symbol. Handles both gzip and plain text formats.
+
+    Args:
+        raw_path: Path to raw_bookticker.jsonl or .jsonl.gz file.
+        symbols: Iterable of symbols to extract (filters out others).
+
+    Returns:
+        Dict mapping symbol -> list of SpreadSample objects.
+    """
     symbols_set = set(symbols)
     samples: dict[str, list[SpreadSample]] = {symbol: [] for symbol in symbols_set}
+    # Choose opener based on file extension
     if raw_path.suffix == ".gz":
         opener = lambda p: gzip.open(p, "rt", encoding="utf-8")  # noqa: E731
     else:
@@ -187,6 +303,21 @@ def _read_spread_samples(raw_path: Path, symbols: Iterable[str]) -> dict[str, li
 
 
 def _read_summary_results(run_dir: Path) -> list[ScoreResult]:
+    """
+    Read summary.json and reconstruct ScoreResult objects for depth stage.
+
+    Parses the summary JSON artifact to rebuild ScoreResult instances
+    needed as input to the depth check stage.
+
+    Args:
+        run_dir: Run directory containing summary.json.
+
+    Returns:
+        List of ScoreResult objects with spread stats and metrics.
+
+    Raises:
+        ValueError: If summary.json format is invalid.
+    """
     summary_path = run_dir / "summary.json"
     payload = _load_json(summary_path)
     if not isinstance(payload, list):
@@ -446,6 +577,19 @@ def _run_report(ctx: StageContext) -> dict[str, object]:
 
 
 def default_stage_definitions(cfg: AppConfig) -> list[StageDefinition]:
+    """
+    Create the default five-stage pipeline definition.
+
+    Constructs StageDefinition objects for all pipeline stages with
+    their execution functions and validation logic.
+
+    Args:
+        cfg: Application configuration for artifact naming.
+
+    Returns:
+        List of StageDefinition in execution order:
+        [universe, spread, score, depth, report]
+    """
     spread_raw = _raw_bookticker_name(cfg)
     return [
         StageDefinition(
@@ -492,6 +636,18 @@ def default_stage_definitions(cfg: AppConfig) -> list[StageDefinition]:
 
 
 def validate_stage_names(stage_names: Iterable[str]) -> list[str]:
+    """
+    Validate that all stage names are recognized.
+
+    Args:
+        stage_names: Iterable of stage names to validate.
+
+    Returns:
+        List of validated stage names.
+
+    Raises:
+        ValueError: If any stage name is not in STAGE_ORDER.
+    """
     allowed = set(STAGE_ORDER)
     invalid = [name for name in stage_names if name not in allowed]
     if invalid:
@@ -500,6 +656,19 @@ def validate_stage_names(stage_names: Iterable[str]) -> list[str]:
 
 
 def ensure_stage_order(stage_names: Sequence[str]) -> None:
+    """
+    Verify that stages are in valid execution order.
+
+    Stages must follow the canonical order defined in STAGE_ORDER.
+    For example, ["universe", "score"] is invalid because "spread"
+    must come between them.
+
+    Args:
+        stage_names: Sequence of stage names to check.
+
+    Raises:
+        ValueError: If stages are not in valid order.
+    """
     positions = {name: idx for idx, name in enumerate(STAGE_ORDER)}
     last = -1
     for name in stage_names:
