@@ -23,7 +23,11 @@ Fail Reasons:
     - spread_median_high: Median spread exceeds maximum acceptable threshold
     - spread_p90_low: 90th percentile spread below minimum
     - spread_p90_high: 90th percentile spread exceeds maximum (too volatile)
-    - missing_24h_stats: 24-hour volume/trade statistics unavailable
+
+Note:
+    missing_24h_stats is NOT included as a fail reason. Per AD-101, this flag
+    is informational only. Symbols with truly missing data are filtered in
+    the universe stage. API null responses are valid and shouldn't cause failure.
 
 Example:
     >>> stats = compute_spread_stats(samples)
@@ -195,8 +199,12 @@ def score_symbol(stats: SpreadStats, cfg: AppConfig) -> ScoreResult:
         if stats.spread_p90_bps > cfg.thresholds.spread.p90_max_bps:
             fail_reasons.append("spread_p90_high")
 
-    if stats.missing_24h_stats:
-        fail_reasons.append("missing_24h_stats")
+    # Note: missing_24h_stats is NOT added to fail_reasons.
+    # Per AD-101, this flag is informational only. Symbols with truly missing
+    # 24h data are already filtered out in the universe stage. The scoring
+    # stage should not penalize symbols for null API responses (which are
+    # valid per MEXC docs). The flag is preserved in summary exports for
+    # debugging but doesn't affect pass_spread determination.
 
     edge_mm_bps = _edge_mm_bps(stats, cfg)
     edge_with_unwind_bps = _edge_with_unwind_bps(stats, cfg)

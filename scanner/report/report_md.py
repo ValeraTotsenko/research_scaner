@@ -362,18 +362,31 @@ def _render_report(
     if summary_enriched is None:
         lines.append("- Depth stage: no depth stage (summary_enriched.csv missing)")
     else:
-        depth_total = len(summary_enriched)
-        pass_depth_count = sum(1 for row in summary_enriched if row.pass_depth)
-        lines.extend(
-            [
-                f"- Depth symbols: {depth_total}",
-                f"- PASS_DEPTH: {pass_depth_count}",
-            ]
-        )
+        # Use depth_rows count for actual depth-checked symbols.
+        # summary_enriched includes ALL symbols (some may have no depth data).
+        # depth_rows contains only symbols that were actually checked for depth.
         if depth_rows:
+            depth_checked_count = len(depth_rows)
+            pass_depth_count = sum(1 for row in depth_rows if row.pass_depth)
             uptimes = [row.uptime for row in depth_rows if row.uptime is not None]
+            lines.extend(
+                [
+                    f"- Depth candidates checked: {depth_checked_count}",
+                    f"- PASS_DEPTH: {pass_depth_count}",
+                ]
+            )
             if uptimes:
                 lines.append(f"- Depth uptime p50: {_format_value(_quantiles(uptimes, [0.5])[0.5])}")
+        else:
+            # Fallback to summary_enriched if depth_rows unavailable
+            depth_total = len(summary_enriched)
+            pass_depth_count = sum(1 for row in summary_enriched if row.pass_depth)
+            lines.extend(
+                [
+                    f"- Depth symbols (from enriched): {depth_total}",
+                    f"- PASS_DEPTH: {pass_depth_count}",
+                ]
+            )
 
     lines.append("")
     lines.append("## Top candidates")

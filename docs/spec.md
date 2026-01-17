@@ -98,8 +98,14 @@ Defaults:
 - `spread_median_high` — median above max threshold
 - `spread_p90_low` — p90 below min threshold
 - `spread_p90_high` — p90 above max threshold
-- `missing_24h_stats` — symbol not found in ticker API response OR parse error (AD-101: API returning `null` for quoteVolume/count is valid, not "missing")
 - `no_volume_data` — volume data unavailable (API returned null for both quoteVolume and volume, and estimate couldn't be computed)
+
+### Informational flags (NOT fail reasons)
+
+- `missing_24h_stats` — symbol not found in ticker API response OR parse error. This is
+  informational only and NOT added to fail_reasons. Symbols with truly missing data are
+  filtered in the universe stage. Per AD-101, API returning `null` for quoteVolume/count
+  is valid, not "missing".
 
 ## Score
 
@@ -130,3 +136,53 @@ for stable ties.
 - `pass_spread`
 - `score`
 - `fail_reasons`
+
+## Depth stage
+
+### Candidate selection
+
+Depth candidates are selected from symbols that passed spread criteria, sorted by
+score descending, limited by `candidates_limit`.
+
+### Depth uptime calculation
+
+Depth uptime is calculated as `valid_samples / target_ticks`, where `target_ticks`
+accounts for API rate limiting:
+
+```
+tick_duration_s = num_symbols / max_rps
+if tick_duration_s > interval_s:
+    # Effective snapshot mode
+    target_ticks = duration_s / tick_duration_s
+else:
+    target_ticks = duration_s / interval_s
+```
+
+Example: 80 symbols at 2 RPS with duration=1200s, interval=30s:
+- tick_duration = 80/2 = 40s (exceeds 30s interval)
+- effective_target = 1200/40 = 30 ticks (not naive 1200/30 = 40)
+- uptime p50 of 0.67 means ~20 valid samples per symbol
+
+**Important:** Depth uptime is informational only — NOT a pass/fail criterion.
+This differs from spread uptime which IS a pass/fail criterion.
+
+### PASS_DEPTH criteria
+
+A symbol passes depth check when ALL of these conditions hold:
+
+- `best_bid_notional_median >= best_level_min_notional`
+- `best_ask_notional_median >= best_level_min_notional`
+- `unwind_slippage_p90_bps <= unwind_slippage_max_bps`
+
+### Depth fail reasons
+
+- `missing_best_bid_notional` — no bid data available
+- `best_bid_notional_low` — best bid notional below threshold
+- `missing_best_ask_notional` — no ask data available
+- `best_ask_notional_low` — best ask notional below threshold
+- `missing_unwind_slippage` — no slippage data available
+- `unwind_slippage_high` — slippage exceeds threshold
+- `empty_book` — order book was empty
+- `invalid_book_levels` — order book data invalid
+- `symbol_unavailable` — symbol not available via API
+- `no_valid_samples` — no valid depth samples collected

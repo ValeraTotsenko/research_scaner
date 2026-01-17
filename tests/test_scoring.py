@@ -38,6 +38,11 @@ def test_score_symbol_pass_spread() -> None:
 
 
 def test_score_symbol_flags_fail_reasons() -> None:
+    """Test that scoring correctly identifies fail reasons for spread criteria.
+
+    Note: missing_24h_stats is NOT added to fail_reasons per AD-101.
+    It's an informational flag, not a scoring criterion.
+    """
     stats = SpreadStats(
         symbol="ETHUSDT",
         sample_count=5,
@@ -72,7 +77,8 @@ def test_score_symbol_flags_fail_reasons() -> None:
     assert "low_uptime" in result.fail_reasons
     assert "spread_median_high" in result.fail_reasons
     assert "spread_p90_high" in result.fail_reasons
-    assert "missing_24h_stats" in result.fail_reasons
+    # Per AD-101: missing_24h_stats is informational only, NOT a fail reason
+    assert "missing_24h_stats" not in result.fail_reasons
 
 
 def test_score_symbol_rejects_low_spreads() -> None:
