@@ -95,10 +95,9 @@ def _select_candidates(candidates: Sequence[object], limit: int) -> tuple[list[s
             sorted_pass_spread = sorted_pass_spread[:limit]
         return [item.symbol for item in sorted_pass_spread], pass_spread_total
 
-    sorted_items = sorted(score_items, key=lambda item: (-item.score, item.symbol))
-    if limit > 0:
-        sorted_items = sorted_items[:limit]
-    return [item.symbol for item in sorted_items], pass_spread_total
+    # If no symbols passed spread criteria, return empty list instead of all symbols
+    # This ensures depth check only analyzes symbols that passed spread stage
+    return [], pass_spread_total
 
 
 def _classify_snapshot_error(exc: ValueError) -> str:

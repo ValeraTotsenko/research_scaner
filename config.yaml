@@ -20,7 +20,7 @@ universe:
   min_trades_24h: 500
   use_quote_volume_estimate: true
   require_trade_count: false
-  blacklist_regex: []
+  blacklist_regex: ["ONUSDT$"]  # Filter out non-crypto symbols
   whitelist: []
 
 sampling:

@@ -178,13 +178,14 @@ def test_select_candidates_limits_pass_spread() -> None:
 
 
 def test_select_candidates_fallback_to_score() -> None:
+    # Changed behavior: if no symbols passed spread, return empty list instead of fallback to all
     candidates = [_score_result(f"S{i:03d}", float(i), False) for i in range(300)]
 
     selected, pass_spread_total = _select_candidates(candidates, limit=50)
 
     assert pass_spread_total == 0
-    assert len(selected) == 50
-    assert selected[0] == "S299"
+    assert len(selected) == 0  # Should return empty list, not fallback to score
+    assert selected == []
 
 
 def test_select_candidates_limits_strings() -> None:
